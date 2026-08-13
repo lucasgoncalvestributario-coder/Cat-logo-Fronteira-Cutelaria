@@ -20,7 +20,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog');
   const [knives, setKnives] = useState<Knife[]>([]);
   const [config, setConfig] = useState<StoreConfig>({
-    whatsappNumber: '5511999998888',
+    whatsappNumber: '554792787901',
     storeName: 'FRONTEIRA CUTELARIA',
     adminPin: '251127',
     welcomeMessage: 'Olá! Gostaria de mais informações sobre o catálogo da Fronteira Cutelaria.',

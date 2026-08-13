@@ -32,7 +32,7 @@ if (!fs.existsSync(DATA_DIR)) {
 
 // Initial default configuration
 const defaultConfig = {
-  whatsappNumber: '5511999998888',
+  whatsappNumber: '554792787901',
   storeName: 'Fronteira Cutelaria',
   adminPin: '251127',
   welcomeMessage: 'Olá! Gostaria de mais informações sobre o catálogo da Fronteira Cutelaria.'

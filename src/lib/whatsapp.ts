@@ -1,6 +1,6 @@
 import { Knife } from '../types';
 
-export const DEFAULT_WHATSAPP_NUMBER = '5511999998888';
+export const DEFAULT_WHATSAPP_NUMBER = '554792787901';
 
 export function formatCurrencyBRL(amount: number): string {
   if (!amount || amount <= 0) return 'Sob Consulta';
@@ -12,7 +12,8 @@ export function formatCurrencyBRL(amount: number): string {
 }
 
 export function cleanPhoneNumber(phone: string): string {
-  return phone.replace(/\D/g, '');
+  const digits = (phone || '').replace(/\D/g, '');
+  return digits || DEFAULT_WHATSAPP_NUMBER;
 }
 
 export function generateKnifeWhatsAppLink(knife: Knife, phoneNumber: string = DEFAULT_WHATSAPP_NUMBER): string {
@@ -32,4 +33,3 @@ export function generateGeneralWhatsAppLink(message: string, phoneNumber: string
   const cleanPhone = cleanPhoneNumber(phoneNumber) || DEFAULT_WHATSAPP_NUMBER;
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 }
-

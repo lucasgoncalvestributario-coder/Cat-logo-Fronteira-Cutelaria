@@ -7,7 +7,7 @@ const FAVORITES_KEY = 'cutelaria_favorites_v1';
 const CONFIG_KEY = 'cutelaria_config_v1';
 
 export const DEFAULT_CONFIG: StoreConfig = {
-  whatsappNumber: '5511999998888',
+  whatsappNumber: '554792787901',
   storeName: 'Fronteira Cutelaria',
   adminPin: '251127',
   welcomeMessage: 'Olá! Gostaria de mais informações sobre o catálogo da Fronteira Cutelaria.'

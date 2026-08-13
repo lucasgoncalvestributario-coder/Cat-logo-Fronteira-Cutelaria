@@ -2086,7 +2086,7 @@ export function AdminPanelModal({
                       required
                       value={settingsForm.whatsappNumber}
                       onChange={(e) => setSettingsForm({ ...settingsForm, whatsappNumber: e.target.value })}
-                      placeholder="Ex: 5511999998888"
+                      placeholder="Ex: 554792787901"
                       className="w-full p-2.5 rounded-xl bg-[#161822] border border-white/10 text-white font-mono"
                     />
                   </div>
