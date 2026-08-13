@@ -17,7 +17,7 @@ export function safeSetLocalStorage(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
   } catch (err: any) {
-    console.warn(`localStorage quota exceeded or error for key "${key}":`, err?.message || err);
+    console.warn(`[Storage] localStorage quota exceeded or error for key "${key}":`, err?.message || err);
 
     // Try clearing non-essential sales log cache to free space
     try {
@@ -60,29 +60,32 @@ function getAdminAuthHeaders(): Record<string, string> {
 }
 
 export async function fetchKnives(isAdmin = false): Promise<Knife[]> {
+  console.log(`[Storage] 📥 Carregando catálogo de facas (modo ${isAdmin ? 'admin' : 'público'})...`);
   try {
     const headers = getAdminAuthHeaders();
     const res = await fetch(`/api/knives${isAdmin ? '?admin=true' : ''}`, { headers, cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
+        console.log(`[Storage] ✓ ${data.length} facas carregadas da API com sucesso.`);
         safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(data));
         idbSaveKnives(data);
         return data;
       }
     }
   } catch (err) {
-    console.warn('API offline or error, reading local cache:', err);
+    console.warn('[Storage] API offline ou inacessível, recuperando do cache local (IndexedDB):', err);
   }
 
   // 1. Try IndexedDB (handles full-res base64 images without quota limits)
   try {
     const idbKnives = await idbGetKnives();
     if (idbKnives && idbKnives.length > 0) {
+      console.log(`[Storage] ✓ ${idbKnives.length} facas recuperadas do IndexedDB.`);
       return isAdmin ? idbKnives : idbKnives.filter((k: Knife) => !k.isHidden);
     }
   } catch (e) {
-    console.warn('IndexedDB read error:', e);
+    console.warn('[Storage] IndexedDB read error:', e);
   }
 
   // 2. Fallback to localStorage
@@ -90,9 +93,10 @@ export async function fetchKnives(isAdmin = false): Promise<Knife[]> {
   if (cached) {
     try {
       const parsed = JSON.parse(cached);
+      console.log(`[Storage] ✓ ${parsed.length} facas recuperadas do LocalStorage.`);
       return isAdmin ? parsed : parsed.filter((k: Knife) => !k.isHidden);
     } catch (e) {
-      console.error('Error parsing local cache:', e);
+      console.error('[Storage] Error parsing local cache:', e);
     }
   }
 
@@ -107,6 +111,11 @@ export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
     knife.status === 'esgotado' ||
     (typeof knife.quantity === 'number' && knife.quantity <= 0)
   );
+
+  const defaultImg = 'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000';
+  const finalImages = (knife.images && knife.images.length > 0)
+    ? knife.images
+    : [defaultImg];
 
   const normalizedKnife: Knife = {
     id: targetId,
@@ -124,25 +133,22 @@ export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
     isOutofStock: isSoldOut,
     status: isSoldOut ? 'esgotado' : 'disponivel',
     quantity: isSoldOut ? 0 : (typeof knife.quantity === 'number' && knife.quantity > 0 ? knife.quantity : 1),
-    images: (knife.images && knife.images.length > 0)
-      ? knife.images
-      : ['https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000'],
+    images: finalImages,
     description: knife.description || '',
-    structure: knife.structure,
-    sheath: knife.sheath,
-    bladeFinish: knife.bladeFinish,
-    guardMaterial: knife.guardMaterial,
-    totalLength: knife.totalLength,
-    bladeThickness: knife.bladeThickness,
-    bladeWidth: knife.bladeWidth,
+    thickness: knife.thickness,
     weight: knife.weight,
-    features: knife.features || [],
+    finish: knife.finish,
+    sheathType: knife.sheathType,
     isHidden: Boolean(knife.isHidden)
   };
+
+  console.log(`[Storage] 💾 Salvando faca "${normalizedKnife.name}" (ID: ${normalizedKnife.id}, Código: ${normalizedKnife.code}, ${normalizedKnife.images.length} fotos)...`);
 
   // 1. Immediately save to IndexedDB & localStorage for 100% offline & instant reactivity
   try {
     await idbPutKnife(normalizedKnife);
+    console.log('[Storage] ✓ Faca salva no IndexedDB (armazenamento persistente do navegador).');
+    
     const cached = localStorage.getItem(KNIVES_CACHE_KEY);
     let list: Knife[] = cached ? JSON.parse(cached) : [];
     const idx = list.findIndex(k => k.id === targetId || k.code === normalizedKnife.code);
@@ -152,8 +158,9 @@ export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
       list = [normalizedKnife, ...list];
     }
     safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(list));
+    console.log('[Storage] ✓ Cache LocalStorage atualizado.');
   } catch (err) {
-    console.warn('Local save warning in saveKnifeToApi:', err);
+    console.warn('[Storage] Aviso ao salvar localmente:', err);
   }
 
   // 2. Persist to API backend
@@ -161,6 +168,7 @@ export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
     const url = isNew ? '/api/knives' : `/api/knives/${targetId}`;
     const method = isNew ? 'POST' : 'PUT';
 
+    console.log(`[Storage] 📡 Enviando ${method} ${url} para o servidor...`);
     const res = await fetch(url, {
       method,
       headers: getAdminAuthHeaders(),
@@ -169,11 +177,15 @@ export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
 
     if (res.ok) {
       const serverSaved: Knife = await res.json();
+      console.log(`[Storage] ✓ Servidor respondeu com sucesso (HTTP ${res.status}). Faca confirmada em disco.`);
       await idbPutKnife(serverSaved);
       return serverSaved;
+    } else {
+      const errText = await res.text();
+      console.warn(`[Storage] Servidor respondeu com HTTP ${res.status}: ${errText}. Utilizando versão salva localmente.`);
     }
   } catch (err) {
-    console.warn('Server sync failed, returning local saved knife:', err);
+    console.warn('[Storage] Falha de conexão com a API de backend, faca foi salva localmente com sucesso:', err);
   }
 
   return normalizedKnife;
@@ -181,6 +193,7 @@ export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
 
 export async function deleteKnifeFromApi(id: string): Promise<boolean> {
   const targetId = String(id || '').trim();
+  console.log(`[Storage] 🗑️ Excluindo faca ID: "${targetId}"...`);
 
   // Immediately remove from IndexedDB & localStorage
   try {
@@ -194,7 +207,7 @@ export async function deleteKnifeFromApi(id: string): Promise<boolean> {
       const filtered = list.filter(k => String(k.id || '').trim() !== targetId && String(k.code || '').trim() !== targetId);
       safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(filtered));
     } catch (e) {
-      console.error('Error updating cache on delete:', e);
+      console.error('[Storage] Error updating cache on delete:', e);
     }
   }
 
@@ -203,9 +216,10 @@ export async function deleteKnifeFromApi(id: string): Promise<boolean> {
       method: 'DELETE',
       headers: getAdminAuthHeaders(),
     });
+    console.log(`[Storage] ✓ Faca excluída do servidor (HTTP ${res.status}).`);
     return res.ok;
   } catch (err) {
-    console.warn('API delete failed, local cache updated:', err);
+    console.warn('[Storage] API delete failed, local cache updated:', err);
     return true;
   }
 }
@@ -222,7 +236,7 @@ export async function duplicateKnifeInApi(id: string): Promise<Knife | null> {
       return data;
     }
   } catch (e) {
-    console.warn('Duplicate API failed, using fallback:', e);
+    console.warn('[Storage] Duplicate API failed, using fallback:', e);
   }
 
   const current = await fetchKnives(true);
@@ -256,7 +270,7 @@ export async function importCatalogToApi(catalog: Knife[]): Promise<boolean> {
       return true;
     }
   } catch (e) {
-    console.warn('Import API error, saved locally:', e);
+    console.warn('[Storage] Import API error, saved locally:', e);
   }
   return true;
 }
@@ -295,7 +309,7 @@ export async function fetchStoreConfig(): Promise<StoreConfig> {
       return merged;
     }
   } catch (err) {
-    console.warn('API config load error:', err);
+    console.warn('[Storage] API config load error:', err);
   }
 
   const cached = localStorage.getItem(CONFIG_KEY);
@@ -320,7 +334,7 @@ export async function saveStoreConfig(config: StoreConfig): Promise<boolean> {
       return true;
     }
   } catch (e) {
-    console.warn('API config update failed, saved locally:', e);
+    console.warn('[Storage] API config update failed, saved locally:', e);
   }
   return true;
 }

@@ -94,6 +94,7 @@ export function AdminPanelModal({
   const [newImageUrl, setNewImageUrl] = useState('');
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const [isSavingKnife, setIsSavingKnife] = useState(false);
+  const [formErrorMessage, setFormErrorMessage] = useState('');
 
   // Preview Knife state
   const [previewKnife, setPreviewKnife] = useState<Knife | null>(null);
@@ -434,6 +435,8 @@ export function AdminPanelModal({
   });
 
   const handleOpenNewForm = () => {
+    console.log('[AdminPanel] ➕ Abrindo formulário de cadastro de nova faca.');
+    setFormErrorMessage('');
     setIsCustomSteel(false);
     setIsCustomHandle(false);
     setIsCustomLength(false);
@@ -460,6 +463,8 @@ export function AdminPanelModal({
   };
 
   const handleOpenEditForm = (knife: Knife) => {
+    console.log(`[AdminPanel] ✏️ Abrindo edição da faca "${knife.name}" (ID: ${knife.id}, Código: ${knife.code}).`);
+    setFormErrorMessage('');
     setIsCustomSteel(Boolean(knife.steelType && !DEFAULT_STEEL_TYPES.includes(knife.steelType)));
     setIsCustomHandle(Boolean(knife.handleMaterial && !DEFAULT_HANDLE_MATERIALS.includes(knife.handleMaterial)));
     setIsCustomLength(Boolean(knife.length && !DEFAULT_LENGTH_OPTIONS.includes(knife.length)));
@@ -476,28 +481,57 @@ export function AdminPanelModal({
 
   const handleSaveKnifeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingKnife) return;
+    console.log('[AdminPanel] 🖱️ Botão "Salvar produto" acionado pelo usuário.');
+
+    if (!editingKnife) {
+      console.warn('[AdminPanel] ⚠️ Nenhum objeto de faca em edição.');
+      setFormErrorMessage('Nenhum produto selecionado para salvar.');
+      return;
+    }
+
+    console.log('[AdminPanel] 📋 Validando campos do formulário...');
+    console.log(` - Código: "${currentKnifeCode}"`);
+    console.log(` - Nome: "${currentKnifeName}"`);
+    console.log(` - Preço: R$ ${currentKnifePrice}`);
+    console.log(` - Fotos anexadas: ${knifeImages.length}`);
+
+    if (isUploadingPhotos) {
+      const msg = '⚠️ O upload das fotos ainda está em andamento. Aguarde alguns instantes antes de salvar.';
+      console.warn('[AdminPanel]', msg);
+      setFormErrorMessage(msg);
+      return;
+    }
+
+    if (isKnifeNameEmpty || isKnifeNameInvalid) {
+      const msg = '⚠️ O nome do produto é obrigatório e deve ter no mínimo 3 caracteres.';
+      console.warn('[AdminPanel]', msg);
+      setFormErrorMessage(msg);
+      return;
+    }
 
     if (isKnifeCodeEmpty) {
-      setSaveMessage('⚠️ O código de referência é obrigatório.');
+      const msg = '⚠️ O código de referência é obrigatório (ex: FC-001).';
+      console.warn('[AdminPanel]', msg);
+      setFormErrorMessage(msg);
       return;
     }
+
     if (isKnifeCodeDuplicate) {
-      setSaveMessage(`⚠️ O código "${currentKnifeCode}" já está em uso por outro produto! Escolha um código único.`);
+      const msg = `⚠️ O código de referência "${currentKnifeCode}" já está em uso por outro produto cadastrado. Escolha outro código exclusivo.`;
+      console.warn('[AdminPanel]', msg);
+      setFormErrorMessage(msg);
       return;
     }
-    if (isKnifeNameEmpty || isKnifeNameInvalid) {
-      setSaveMessage('⚠️ Nome do produto é obrigatório (mínimo 3 caracteres).');
-      return;
-    }
+
     if (isKnifePriceInvalid) {
-      setSaveMessage('⚠️ Informe um preço válido em Reais (maior que R$ 0).');
+      const msg = '⚠️ O preço em Reais (R$) deve ser maior que zero (ex: 350).';
+      console.warn('[AdminPanel]', msg);
+      setFormErrorMessage(msg);
       return;
     }
-    if (isKnifeImagesEmpty) {
-      setSaveMessage('⚠️ Adicione pelo menos 1 foto para salvar o produto.');
-      return;
-    }
+
+    // Clear any previous error message
+    setFormErrorMessage('');
 
     const isSoldOut = Boolean(
       editingKnife.isOutofStock ||
@@ -535,8 +569,11 @@ export function AdminPanelModal({
       }
     }
 
-    const knifeToSave = {
-      ...editingKnife,
+    const defaultImg = 'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000';
+    const finalImages = knifeImages.length > 0 ? knifeImages : [defaultImg];
+
+    const knifeToSave: Knife = {
+      id: editingKnife.id || `faca-${Date.now()}`,
       code: currentKnifeCode,
       name: currentKnifeName,
       price: finalPrice,
@@ -545,25 +582,37 @@ export function AdminPanelModal({
       promotionalPrice,
       category: finalCategory,
       originalCategory: originalCat,
+      steelType: editingKnife.steelType || 'Aço Carbono 5160',
+      handleMaterial: editingKnife.handleMaterial || 'Madeira Nobre',
       length: formattedLength || '8"',
       isOutofStock: isSoldOut,
       status: isSoldOut ? 'esgotado' : 'disponivel',
       quantity: isSoldOut ? 0 : (typeof editingKnife.quantity === 'number' && editingKnife.quantity > 0 ? editingKnife.quantity : 1),
-      images: knifeImages.length > 0 ? knifeImages : ['https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000'],
+      images: finalImages,
+      description: editingKnife.description || '',
+      thickness: editingKnife.thickness,
+      weight: editingKnife.weight,
+      finish: editingKnife.finish,
+      sheathType: editingKnife.sheathType,
+      isHidden: Boolean(editingKnife.isHidden)
     };
 
+    console.log('[AdminPanel] ✓ Validações concluídas com sucesso. Objeto pronto para salvar:', knifeToSave);
     setIsSavingKnife(true);
     setSaveMessage('Salvando produto no catálogo...');
 
     try {
+      console.log('[AdminPanel] 📡 Chamando onSaveKnife...');
       await onSaveKnife(knifeToSave);
-      setSaveMessage('✓ Faca salva com sucesso no catálogo!');
-      setTimeout(() => setSaveMessage(''), 3500);
+      console.log('[AdminPanel] ✓ Produto salvo e sincronizado com sucesso!');
+      setSaveMessage(`✓ Faca "${knifeToSave.name}" salva com sucesso no catálogo!`);
+      setTimeout(() => setSaveMessage(''), 4000);
       setActiveTab('knives');
-    } catch (err) {
-      console.warn('Erro ao salvar produto, tentando salvar em modo de contingência:', err);
+    } catch (err: any) {
+      console.error('[AdminPanel] ❌ Erro ao salvar produto:', err);
+      setFormErrorMessage(`Erro ao salvar no servidor: ${err?.message || 'Tente novamente'}. Salvando cópia local...`);
       setSaveMessage('✓ Faca salva no catálogo local!');
-      setTimeout(() => setSaveMessage(''), 3500);
+      setTimeout(() => setSaveMessage(''), 4000);
       setActiveTab('knives');
     } finally {
       setIsSavingKnife(false);
@@ -958,8 +1007,18 @@ export function AdminPanelModal({
 
             {/* Notification Toast */}
             {saveMessage && (
-              <div className="p-3 bg-emerald-500/20 border-b border-emerald-500/30 text-emerald-300 text-xs text-center font-bold animate-fadeIn flex items-center justify-center gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-400" />
+              <div
+                className={`p-3 border-b text-xs text-center font-bold animate-fadeIn flex items-center justify-center gap-2 ${
+                  saveMessage.includes('⚠️') || saveMessage.includes('❌') || saveMessage.includes('Erro')
+                    ? 'bg-red-500/20 border-red-500/30 text-red-300'
+                    : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
+                }`}
+              >
+                {saveMessage.includes('⚠️') || saveMessage.includes('❌') || saveMessage.includes('Erro') ? (
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                ) : (
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                )}
                 <span>{saveMessage}</span>
               </div>
             )}
@@ -1557,6 +1616,16 @@ export function AdminPanelModal({
                     </button>
                   </div>
 
+                  {formErrorMessage && (
+                    <div className="p-3.5 rounded-xl bg-red-950/80 border border-red-500/60 text-red-200 flex items-start gap-2.5 shadow-lg animate-fadeIn">
+                      <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                      <div>
+                        <h5 className="font-extrabold text-red-300 uppercase tracking-wide">Atenção ao preencher o produto</h5>
+                        <p className="text-xs text-red-200 mt-0.5 font-medium">{formErrorMessage}</p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Nome da Faca */}
                     <div>
@@ -2094,18 +2163,40 @@ export function AdminPanelModal({
                     </div>
                   </div>
 
+                  {/* Bottom Alerts for instant visibility */}
+                  {formErrorMessage && (
+                    <div className="p-3.5 rounded-xl bg-red-950/90 border border-red-500/70 text-red-200 flex items-start gap-2.5 shadow-lg animate-bounce-short">
+                      <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                      <div>
+                        <h5 className="font-extrabold text-red-300 uppercase tracking-wide text-xs">Não foi possível salvar ainda</h5>
+                        <p className="text-xs text-red-200 mt-0.5 font-semibold">{formErrorMessage}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {isUploadingPhotos && (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                      <span className="font-bold text-xs">Comprimindo e carregando fotos... Aguarde finalizar para salvar.</span>
+                    </div>
+                  )}
+
                   <div className="flex gap-2 pt-2">
                     <button
                       type="submit"
                       disabled={isSavingKnife || isUploadingPhotos}
-                      className={`flex-1 py-3.5 rounded-xl font-extrabold text-sm uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all ${
+                      className={`flex-1 py-4 rounded-xl font-extrabold text-sm uppercase tracking-wider shadow-lg flex items-center justify-center gap-2 transition-all ${
                         isSavingKnife || isUploadingPhotos
                           ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-amber-500 to-amber-600 text-black cursor-pointer hover:brightness-110'
+                          : 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black cursor-pointer hover:brightness-110 active:scale-[0.99]'
                       }`}
                     >
-                      <Save className="w-4 h-4" />
-                      <span>{isSavingKnife ? 'SALVANDO PRODUTO...' : 'SALVAR ALTERAÇÕES'}</span>
+                      {isSavingKnife ? (
+                        <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4" />
+                      )}
+                      <span>{isSavingKnife ? 'SALVANDO PRODUTO...' : 'SALVAR PRODUTO NO CATÁLOGO'}</span>
                     </button>
 
                     {editingKnife.id && (

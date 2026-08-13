@@ -393,8 +393,10 @@ app.post('/api/knives', (req, res) => {
     code: req.body.code && req.body.code.trim() ? req.body.code.trim() : getNextKnifeCode(knives)
   };
   const newKnife = normalizeKnifeData(rawKnife);
+  console.log(`[Server] ➕ POST /api/knives: Cadastrando faca "${newKnife.name}" (ID: ${newKnife.id}, Código: ${newKnife.code}, Preço: R$ ${newKnife.price}, Imagens: ${newKnife.images?.length || 0})`);
   knives.unshift(newKnife);
   saveKnivesToDisk(knives);
+  console.log(`[Server] ✓ Faca salva com sucesso no arquivo JSON. Total de facas no catálogo: ${knives.length}`);
   res.status(201).json(newKnife);
 });
 
@@ -447,6 +449,7 @@ app.put('/api/knives/:id', (req, res) => {
   };
 
   const finalKnife = normalizeKnifeData(merged);
+  console.log(`[Server] ✏️ PUT /api/knives/${req.params.id}: Atualizando faca "${finalKnife.name}" (Código: ${finalKnife.code}, Preço: R$ ${finalKnife.price})`);
 
   if (index !== -1) {
     knives[index] = finalKnife;
@@ -455,6 +458,7 @@ app.put('/api/knives/:id', (req, res) => {
   }
 
   saveKnivesToDisk(knives);
+  console.log(`[Server] ✓ Faca atualizada em disco com sucesso.`);
   res.json(finalKnife);
 });
 

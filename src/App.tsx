@@ -153,20 +153,24 @@ export default function App() {
 
   // Admin CRUD Handlers - Instant local reactivity + backend persistence
   const handleSaveKnife = async (knifeToSave: Partial<Knife>) => {
+    console.log('[App] 🚀 handleSaveKnife recebido:', knifeToSave);
     try {
       const saved = await saveKnifeToApi(knifeToSave);
+      console.log('[App] ✓ Faca retornada por saveKnifeToApi:', saved);
       setKnives((prev) => {
         const idx = prev.findIndex((item) => item.id === saved.id || (saved.code && item.code === saved.code));
         if (idx >= 0) {
           const updated = [...prev];
           updated[idx] = saved;
+          console.log(`[App] ✓ Catálogo atualizado: Faca editada no índice ${idx}.`);
           return updated;
         }
+        console.log('[App] ✓ Catálogo atualizado: Nova faca inserida no topo.');
         return [saved, ...prev];
       });
       return saved;
     } catch (err) {
-      console.error('Error saving knife:', err);
+      console.error('[App] ❌ Erro ao processar handleSaveKnife:', err);
       throw err;
     }
   };
