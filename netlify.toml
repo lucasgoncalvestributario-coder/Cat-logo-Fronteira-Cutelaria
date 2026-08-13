@@ -1,0 +1,12 @@
+[build]
+  publish = "dist"
+  command = "bun run build"
+
+[build.environment]
+  # Omit public Firebase Web App API key from Netlify Secrets Scanner
+  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyBULwAyVqjGDoTyY9prVqa-VUQWcaZQEHc"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

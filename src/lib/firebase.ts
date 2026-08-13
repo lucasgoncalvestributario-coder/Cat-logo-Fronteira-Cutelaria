@@ -17,13 +17,13 @@ import { Knife, StoreConfig } from '../types';
 import firebaseConfigJson from '../../firebase-applet-config.json';
 
 export const firebaseConfig = {
-  projectId: firebaseConfigJson.projectId || "gen-lang-client-0135363209",
-  appId: firebaseConfigJson.appId || "1:141072856887:web:3a4550b04d4ca4824e4cb2",
-  apiKey: firebaseConfigJson.apiKey || "AIzaSyBULwAyVqjGDoTyY9prVqa-VUQWcaZQEHc",
-  authDomain: firebaseConfigJson.authDomain || "gen-lang-client-0135363209.firebaseapp.com",
-  firestoreDatabaseId: firebaseConfigJson.firestoreDatabaseId || "ai-studio-cutelariaartesan-d1fa4ca2-bee4-4acf-9272-96423c649f61",
-  storageBucket: firebaseConfigJson.storageBucket || "gen-lang-client-0135363209.firebasestorage.app",
-  messagingSenderId: firebaseConfigJson.messagingSenderId || "141072856887",
+  projectId: firebaseConfigJson.projectId || (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-0135363209",
+  appId: firebaseConfigJson.appId || (import.meta as any).env?.VITE_FIREBASE_APP_ID || "1:141072856887:web:3a4550b04d4ca4824e4cb2",
+  apiKey: firebaseConfigJson.apiKey || (import.meta as any).env?.VITE_FIREBASE_API_KEY || "AIzaSyBULwAyVqjGDoTyY9prVqa-VUQWcaZQEHc",
+  authDomain: firebaseConfigJson.authDomain || (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || "gen-lang-client-0135363209.firebaseapp.com",
+  firestoreDatabaseId: firebaseConfigJson.firestoreDatabaseId || (import.meta as any).env?.VITE_FIREBASE_DATABASE_ID || "ai-studio-cutelariaartesan-d1fa4ca2-bee4-4acf-9272-96423c649f61",
+  storageBucket: firebaseConfigJson.storageBucket || (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || "gen-lang-client-0135363209.firebasestorage.app",
+  messagingSenderId: firebaseConfigJson.messagingSenderId || (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || "141072856887",
 };
 
 // Initialize Firebase App
