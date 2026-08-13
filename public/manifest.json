@@ -1,0 +1,25 @@
+{
+  "short_name": "Cutelaria",
+  "name": "FRONTEIRA CUTELARIA",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "display": "standalone",
+  "orientation": "portrait",
+  "scope": "/",
+  "description": "Catálogo PWA premium de facas artesanais forjadas à mão. Exclusividade, tradição e atendimento via WhatsApp."
+}

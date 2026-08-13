@@ -1,0 +1,6 @@
+{
+  "name": "Fronteira Cutelaria",
+  "description": "Catálogo PWA premium de facas artesanais forjadas à mão FRONTEIRA CUTELARIA. Exclusividade, tradição e atendimento via WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
