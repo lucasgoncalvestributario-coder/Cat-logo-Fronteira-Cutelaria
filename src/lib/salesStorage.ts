@@ -1,3 +1,6 @@
+import { db } from './firebase';
+import { collection, doc, setDoc, getDocs, deleteDoc } from 'firebase/firestore';
+
 export type PaymentMethod = 'pix' | 'cartao_credito' | 'cartao_debito' | 'dinheiro' | 'outros';
 
 export interface SaleRecord {
@@ -17,6 +20,7 @@ export interface SaleRecord {
 }
 
 const SALES_LOG_KEY = 'cutelaria_sales_log_v1';
+const SALES_COLLECTION = 'sales';
 
 function cleanImageUrls(images?: string[]): string[] {
   if (!images || !Array.isArray(images)) return [];
@@ -46,6 +50,26 @@ export function getStoredSalesLog(): SaleRecord[] {
 }
 
 export async function fetchSalesLogAPI(): Promise<SaleRecord[]> {
+  // 1. Try Firebase Firestore
+  try {
+    const colRef = collection(db, SALES_COLLECTION);
+    const snap = await getDocs(colRef);
+    const list: SaleRecord[] = [];
+    snap.forEach((d) => {
+      list.push({ ...(d.data() as SaleRecord), id: d.id });
+    });
+    if (list.length > 0) {
+      list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      try {
+        localStorage.setItem(SALES_LOG_KEY, JSON.stringify(list));
+      } catch (_) {}
+      return list;
+    }
+  } catch (err) {
+    console.warn('[Sales] Firestore fetch error:', err);
+  }
+
+  // 2. Try Express API
   try {
     const res = await fetch('/api/sales');
     if (res.ok) {
@@ -57,9 +81,8 @@ export async function fetchSalesLogAPI(): Promise<SaleRecord[]> {
         return data;
       }
     }
-  } catch (e) {
-    console.warn('API sales fetch failed, fallback to localStorage:', e);
-  }
+  } catch (e) {}
+
   return getStoredSalesLog();
 }
 
@@ -129,12 +152,22 @@ export function saveSaleRecord(
     }
   }
 
+  // Persist to Firebase Firestore
+  try {
+    const docRef = doc(db, SALES_COLLECTION, newRecord.id);
+    const cleanRecord: Record<string, any> = {};
+    for (const [k, v] of Object.entries(newRecord)) {
+      if (v !== undefined) cleanRecord[k] = v;
+    }
+    setDoc(docRef, cleanRecord, { merge: true }).catch(() => {});
+  } catch (_) {}
+
   // Persist to server in background
   fetch('/api/sales', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(newRecord),
-  }).catch((err) => console.warn('Failed to sync sale record to server:', err));
+  }).catch(() => {});
 
   return updated;
 }
@@ -148,10 +181,14 @@ export function removeSaleRecord(saleId: string): SaleRecord[] {
     console.error('Error removing sale record:', e);
   }
 
-  // Persist deletion to server in background
+  try {
+    const docRef = doc(db, SALES_COLLECTION, saleId);
+    deleteDoc(docRef).catch(() => {});
+  } catch (_) {}
+
   fetch(`/api/sales/${saleId}`, {
     method: 'DELETE',
-  }).catch((err) => console.warn('Failed to delete sale record on server:', err));
+  }).catch(() => {});
 
   return updated;
 }
@@ -163,10 +200,9 @@ export function clearSalesLog(): SaleRecord[] {
     console.error('Error clearing sales log:', e);
   }
 
-  // Persist clear on server
   fetch('/api/sales', {
     method: 'DELETE',
-  }).catch((err) => console.warn('Failed to clear sales on server:', err));
+  }).catch(() => {});
 
   return [];
 }

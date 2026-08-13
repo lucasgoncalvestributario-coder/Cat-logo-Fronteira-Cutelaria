@@ -1,6 +1,17 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { ActiveTab, Knife, FilterState, StoreConfig } from './types';
-import { fetchKnives, saveKnifeToApi, deleteKnifeFromApi, importCatalogToApi, fetchStoreConfig, saveStoreConfig } from './lib/storage';
+import {
+  fetchKnives,
+  saveKnifeToApi,
+  deleteKnifeFromApi,
+  importCatalogToApi,
+  fetchStoreConfig,
+  saveStoreConfig,
+  safeSetLocalStorage,
+  KNIVES_CACHE_KEY
+} from './lib/storage';
+import { idbSaveKnives } from './lib/indexedDbStorage';
+import { subscribeToKnivesFirebase, subscribeToConfigFirebase } from './lib/firebase';
 import { generateGeneralWhatsAppLink } from './lib/whatsapp';
 import { isSameCategory } from './lib/categories';
 
@@ -52,11 +63,88 @@ export default function App() {
     return isStandaloneMatch || isIOSStandalone || isAndroidApp;
   });
 
-  // Initial Data Load & Sync
+  const loadData = useCallback(async () => {
+    try {
+      const loadedKnives = await fetchKnives(true);
+      if (Array.isArray(loadedKnives)) {
+        setKnives(loadedKnives);
+      }
+    } catch (_) {}
+
+    try {
+      const loadedConfig = await fetchStoreConfig();
+      if (loadedConfig) {
+        setConfig(loadedConfig);
+      }
+    } catch (_) {}
+  }, []);
+
+  // Initial Data Load, Firebase Real-Time Firestore Sync & Window Focus Listener
   useEffect(() => {
     loadData();
 
-    // Register Service Worker
+    // 1. PRIMARY: Real-time synchronization via Firebase Firestore onSnapshot
+    // Instantaneous universal broadcast across all devices, browsers and Netlify clients worldwide
+    let unsubKnives: (() => void) | null = null;
+    let unsubConfig: (() => void) | null = null;
+
+    try {
+      unsubKnives = subscribeToKnivesFirebase((liveKnives) => {
+        if (Array.isArray(liveKnives) && liveKnives.length > 0) {
+          console.log('[Firebase Live] 🔥 Atualização universal recebida do Firestore:', liveKnives.length, 'facas');
+          setKnives(liveKnives);
+          safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(liveKnives));
+          idbSaveKnives(liveKnives);
+        }
+      });
+
+      unsubConfig = subscribeToConfigFirebase((liveConfig) => {
+        if (liveConfig) {
+          console.log('[Firebase Live] 🔥 Configuração atualizada do Firestore:', liveConfig);
+          setConfig((prev) => ({ ...prev, ...liveConfig }));
+        }
+      });
+    } catch (fbErr) {
+      console.warn('[Firebase] Erro ao conectar listener:', fbErr);
+    }
+
+    // 2. SECONDARY: Server-Sent Events (SSE) fallback for local dev / express proxy
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/events');
+      eventSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === 'knives_updated' && Array.isArray(payload.data)) {
+            setKnives(payload.data);
+            safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(payload.data));
+            idbSaveKnives(payload.data);
+          } else if (payload.type === 'config_updated' && payload.data) {
+            setConfig((prev) => ({ ...prev, ...payload.data }));
+          }
+        } catch (_) {}
+      };
+      eventSource.onerror = () => {};
+    } catch (_) {}
+
+    // 3. Re-sync immediately whenever the user switches back to this tab or unlocks their phone
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadData();
+      }
+    };
+    const handleWindowFocus = () => {
+      loadData();
+    };
+    const handleOnline = () => {
+      loadData();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('online', handleOnline);
+
+    // 4. Register Service Worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
         console.warn('SW registration failed:', err);
@@ -91,25 +179,23 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
-    // Automatic real-time polling every 6 seconds to keep status in sync across clients
+    // Periodic backup sync
     const interval = setInterval(() => {
       loadData();
     }, 6000);
 
     return () => {
+      if (unsubKnives) unsubKnives();
+      if (unsubConfig) unsubConfig();
+      if (eventSource) eventSource.close();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('online', handleOnline);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
       clearInterval(interval);
     };
-  }, []);
-
-  const loadData = async () => {
-    const loadedKnives = await fetchKnives(true);
-    setKnives(loadedKnives);
-
-    const loadedConfig = await fetchStoreConfig();
-    setConfig(loadedConfig);
-  };
+  }, [loadData]);
 
   // Helper to normalize strings for category comparison (handles accents, spaces, upper/lowercase)
   const normalizeCat = (cat: string) =>

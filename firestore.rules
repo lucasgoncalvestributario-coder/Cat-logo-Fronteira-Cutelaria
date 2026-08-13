@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Knives catalog collection: public read for all visitors worldwide
+    match /knives/{knifeId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Store configuration (WhatsApp number, store name, messages, etc.)
+    match /config/{configId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Sales and customer logs
+    match /sales/{saleId} {
+      allow read, write: if true;
+    }
+
+    match /customers/{customerId} {
+      allow read, write: if true;
+    }
+  }
+}

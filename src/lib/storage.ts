@@ -1,10 +1,19 @@
 import { Knife, StoreConfig } from '../types';
 import { getNextKnifeCode } from './codeUtils';
 import { idbGetKnives, idbSaveKnives, idbPutKnife, idbDeleteKnife } from './indexedDbStorage';
+import {
+  saveKnifeFirebase,
+  deleteKnifeFirebase,
+  fetchKnivesFirebase,
+  saveConfigFirebase,
+  fetchConfigFirebase,
+  seedInitialKnivesIfEmpty
+} from './firebase';
+import { INITIAL_KNIVES } from '../data/initialKnives';
 
-const KNIVES_CACHE_KEY = 'cutelaria_knives_v1';
-const FAVORITES_KEY = 'cutelaria_favorites_v1';
-const CONFIG_KEY = 'cutelaria_config_v1';
+export const KNIVES_CACHE_KEY = 'cutelaria_knives_v1';
+export const FAVORITES_KEY = 'cutelaria_favorites_v1';
+export const CONFIG_KEY = 'cutelaria_config_v1';
 
 export const DEFAULT_CONFIG: StoreConfig = {
   whatsappNumber: '554792787901',
@@ -12,6 +21,18 @@ export const DEFAULT_CONFIG: StoreConfig = {
   adminPin: '251127',
   welcomeMessage: 'Olá! Gostaria de mais informações sobre o catálogo da Fronteira Cutelaria.'
 };
+
+// Auto seed Firestore on first load if empty
+let isSeededChecked = false;
+export async function ensureFirestoreSeeded(): Promise<void> {
+  if (isSeededChecked) return;
+  isSeededChecked = true;
+  try {
+    await seedInitialKnivesIfEmpty(INITIAL_KNIVES);
+  } catch (e) {
+    console.warn('[Storage] Seed check error:', e);
+  }
+}
 
 export function safeSetLocalStorage(key: string, value: string): void {
   try {
@@ -60,13 +81,34 @@ function getAdminAuthHeaders(): Record<string, string> {
 }
 
 export async function fetchKnives(isAdmin = false): Promise<Knife[]> {
-  console.log(`[Storage] 📥 Carregando catálogo de facas (modo ${isAdmin ? 'admin' : 'público'})...`);
+  console.log(`[Storage] 📥 Carregando catálogo central (modo ${isAdmin ? 'admin' : 'público'})...`);
+
+  // 1. PRIMARY: Fetch from Firebase Firestore Central Database
+  try {
+    await ensureFirestoreSeeded();
+    const fbKnives = await fetchKnivesFirebase();
+    if (Array.isArray(fbKnives) && fbKnives.length > 0) {
+      console.log(`[Storage] 🔥 ${fbKnives.length} facas carregadas diretamente do Firebase Firestore!`);
+      safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(fbKnives));
+      idbSaveKnives(fbKnives);
+      return isAdmin ? fbKnives : fbKnives.filter((k: Knife) => !k.isHidden);
+    }
+  } catch (err) {
+    console.warn('[Storage] Aviso ao consultar Firebase Firestore:', err);
+  }
+
+  // 2. SECONDARY: Express Server API
   try {
     const headers = getAdminAuthHeaders();
-    const res = await fetch(`/api/knives${isAdmin ? '?admin=true' : ''}`, { headers, cache: 'no-store' });
+    const ts = Date.now();
+    const query = isAdmin ? `?admin=true&_t=${ts}` : `?_t=${ts}`;
+    const res = await fetch(`/api/knives${query}`, {
+      headers,
+      cache: 'no-store'
+    });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         console.log(`[Storage] ✓ ${data.length} facas carregadas da API com sucesso.`);
         safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(data));
         idbSaveKnives(data);
@@ -74,10 +116,10 @@ export async function fetchKnives(isAdmin = false): Promise<Knife[]> {
       }
     }
   } catch (err) {
-    console.warn('[Storage] API offline ou inacessível, recuperando do cache local (IndexedDB):', err);
+    console.warn('[Storage] API fallback error:', err);
   }
 
-  // 1. Try IndexedDB (handles full-res base64 images without quota limits)
+  // 3. Fallback IndexedDB
   try {
     const idbKnives = await idbGetKnives();
     if (idbKnives && idbKnives.length > 0) {
@@ -88,7 +130,7 @@ export async function fetchKnives(isAdmin = false): Promise<Knife[]> {
     console.warn('[Storage] IndexedDB read error:', e);
   }
 
-  // 2. Fallback to localStorage
+  // 4. Fallback localStorage
   const cached = localStorage.getItem(KNIVES_CACHE_KEY);
   if (cached) {
     try {
@@ -100,7 +142,7 @@ export async function fetchKnives(isAdmin = false): Promise<Knife[]> {
     }
   }
 
-  return [];
+  return INITIAL_KNIVES;
 }
 
 export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
@@ -142,13 +184,19 @@ export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
     isHidden: Boolean(knife.isHidden)
   };
 
-  console.log(`[Storage] 💾 Salvando faca "${normalizedKnife.name}" (ID: ${normalizedKnife.id}, Código: ${normalizedKnife.code}, ${normalizedKnife.images.length} fotos)...`);
+  console.log(`[Storage] 💾 Salvando faca "${normalizedKnife.name}" (ID: ${normalizedKnife.id}, Código: ${normalizedKnife.code}) no Firebase central...`);
 
-  // 1. Immediately save to IndexedDB & localStorage for 100% offline & instant reactivity
+  // 1. PRIMARY: Save directly to Firebase Firestore universal database
+  try {
+    await saveKnifeFirebase(normalizedKnife);
+    console.log('[Storage] 🔥 Faca gravada com sucesso no Firebase Firestore universal!');
+  } catch (fbErr) {
+    console.error('[Storage] Erro ao gravar no Firebase Firestore:', fbErr);
+  }
+
+  // 2. Cache locally for instant UI response and offline safety
   try {
     await idbPutKnife(normalizedKnife);
-    console.log('[Storage] ✓ Faca salva no IndexedDB (armazenamento persistente do navegador).');
-    
     const cached = localStorage.getItem(KNIVES_CACHE_KEY);
     let list: Knife[] = cached ? JSON.parse(cached) : [];
     const idx = list.findIndex(k => k.id === targetId || k.code === normalizedKnife.code);
@@ -158,44 +206,37 @@ export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
       list = [normalizedKnife, ...list];
     }
     safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(list));
-    console.log('[Storage] ✓ Cache LocalStorage atualizado.');
   } catch (err) {
     console.warn('[Storage] Aviso ao salvar localmente:', err);
   }
 
-  // 2. Persist to API backend
+  // 3. Sync to API backend if running in full-stack mode
   try {
     const url = isNew ? '/api/knives' : `/api/knives/${targetId}`;
     const method = isNew ? 'POST' : 'PUT';
-
-    console.log(`[Storage] 📡 Enviando ${method} ${url} para o servidor...`);
-    const res = await fetch(url, {
+    await fetch(url, {
       method,
       headers: getAdminAuthHeaders(),
       body: JSON.stringify(normalizedKnife),
     });
-
-    if (res.ok) {
-      const serverSaved: Knife = await res.json();
-      console.log(`[Storage] ✓ Servidor respondeu com sucesso (HTTP ${res.status}). Faca confirmada em disco.`);
-      await idbPutKnife(serverSaved);
-      return serverSaved;
-    } else {
-      const errText = await res.text();
-      console.warn(`[Storage] Servidor respondeu com HTTP ${res.status}: ${errText}. Utilizando versão salva localmente.`);
-    }
-  } catch (err) {
-    console.warn('[Storage] Falha de conexão com a API de backend, faca foi salva localmente com sucesso:', err);
-  }
+  } catch (_) {}
 
   return normalizedKnife;
 }
 
 export async function deleteKnifeFromApi(id: string): Promise<boolean> {
   const targetId = String(id || '').trim();
-  console.log(`[Storage] 🗑️ Excluindo faca ID: "${targetId}"...`);
+  console.log(`[Storage] 🗑️ Excluindo faca ID: "${targetId}" do Firebase central...`);
 
-  // Immediately remove from IndexedDB & localStorage
+  // 1. Delete from Firebase Firestore
+  try {
+    await deleteKnifeFirebase(targetId);
+    console.log('[Storage] 🔥 Faca excluída do Firebase Firestore.');
+  } catch (fbErr) {
+    console.error('[Storage] Erro ao excluir do Firebase:', fbErr);
+  }
+
+  // 2. Delete from local caches
   try {
     await idbDeleteKnife(targetId);
   } catch (_) {}
@@ -211,34 +252,18 @@ export async function deleteKnifeFromApi(id: string): Promise<boolean> {
     }
   }
 
+  // 3. Sync delete with API backend
   try {
-    const res = await fetch(`/api/knives/${targetId}`, {
+    await fetch(`/api/knives/${targetId}`, {
       method: 'DELETE',
       headers: getAdminAuthHeaders(),
     });
-    console.log(`[Storage] ✓ Faca excluída do servidor (HTTP ${res.status}).`);
-    return res.ok;
-  } catch (err) {
-    console.warn('[Storage] API delete failed, local cache updated:', err);
-    return true;
-  }
+  } catch (_) {}
+
+  return true;
 }
 
 export async function duplicateKnifeInApi(id: string): Promise<Knife | null> {
-  try {
-    const res = await fetch(`/api/knives/duplicate/${id}`, {
-      method: 'POST',
-      headers: getAdminAuthHeaders(),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      await idbPutKnife(data);
-      return data;
-    }
-  } catch (e) {
-    console.warn('[Storage] Duplicate API failed, using fallback:', e);
-  }
-
   const current = await fetchKnives(true);
   const item = current.find(k => k.id === id);
   if (!item) return null;
@@ -250,32 +275,20 @@ export async function duplicateKnifeInApi(id: string): Promise<Knife | null> {
     name: `${item.name} (Cópia)`
   };
 
-  await idbPutKnife(duplicated);
-  current.unshift(duplicated);
-  safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(current));
+  await saveKnifeToApi(duplicated);
   return duplicated;
 }
 
 export async function importCatalogToApi(catalog: Knife[]): Promise<boolean> {
+  for (const item of catalog) {
+    await saveKnifeFirebase(item);
+  }
   await idbSaveKnives(catalog);
   safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(catalog));
-
-  try {
-    const res = await fetch('/api/knives/import', {
-      method: 'POST',
-      headers: getAdminAuthHeaders(),
-      body: JSON.stringify(catalog)
-    });
-    if (res.ok) {
-      return true;
-    }
-  } catch (e) {
-    console.warn('[Storage] Import API error, saved locally:', e);
-  }
   return true;
 }
 
-// Favorites local persistence
+// Favorites local persistence (client-specific preference)
 export function getFavorites(): string[] {
   try {
     const data = localStorage.getItem(FAVORITES_KEY);
@@ -298,19 +311,28 @@ export function toggleFavorite(id: string): string[] {
   return updated;
 }
 
-// Config persistence
+// Config persistence with Firebase
 export async function fetchStoreConfig(): Promise<StoreConfig> {
   try {
-    const res = await fetch('/api/config');
+    const fbConfig = await fetchConfigFirebase();
+    if (fbConfig) {
+      const merged = { ...DEFAULT_CONFIG, ...fbConfig };
+      safeSetLocalStorage(CONFIG_KEY, JSON.stringify(merged));
+      return merged;
+    }
+  } catch (err) {
+    console.warn('[Storage] Erro ao carregar config do Firebase:', err);
+  }
+
+  try {
+    const res = await fetch(`/api/config?_t=${Date.now()}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
       const merged = { ...DEFAULT_CONFIG, ...data };
       safeSetLocalStorage(CONFIG_KEY, JSON.stringify(merged));
       return merged;
     }
-  } catch (err) {
-    console.warn('[Storage] API config load error:', err);
-  }
+  } catch (_) {}
 
   const cached = localStorage.getItem(CONFIG_KEY);
   if (cached) {
@@ -324,17 +346,22 @@ export async function fetchStoreConfig(): Promise<StoreConfig> {
 
 export async function saveStoreConfig(config: StoreConfig): Promise<boolean> {
   safeSetLocalStorage(CONFIG_KEY, JSON.stringify(config));
+  
   try {
-    const res = await fetch('/api/config', {
+    await saveConfigFirebase(config);
+    console.log('[Storage] 🔥 Configurações salvas no Firebase Firestore.');
+  } catch (e) {
+    console.warn('[Storage] Erro ao salvar config no Firebase:', e);
+  }
+
+  try {
+    await fetch('/api/config', {
       method: 'PUT',
       headers: getAdminAuthHeaders(),
       body: JSON.stringify(config)
     });
-    if (res.ok) {
-      return true;
-    }
-  } catch (e) {
-    console.warn('[Storage] API config update failed, saved locally:', e);
-  }
+  } catch (_) {}
+
   return true;
 }
+

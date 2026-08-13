@@ -48,6 +48,117 @@ const validAdminSessions = new Set<string>();
 // Rate limiting state for PIN attempts (IP -> { count, lockUntil })
 const pinAttemptsMap = new Map<string, { count: number; lockUntil: number }>();
 
+const DEFAULT_INITIAL_KNIVES = [
+  {
+    id: 'faca-001',
+    code: 'FC-001',
+    name: 'Picanheira Damasco 10" Forjada',
+    price: 1890,
+    category: 'PREMIUM',
+    steelType: 'Aço Damasco (1084/15N20)',
+    handleMaterial: 'Madeira Estabilizada de Jacarandá com Pinos em Latão',
+    length: '10" (25cm)',
+    quantity: 5,
+    isOutofStock: false,
+    images: [
+      'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000',
+      'https://images.unsplash.com/photo-1589182373726-e4f658ab50f0?auto=format&fit=crop&q=80&w=1000'
+    ]
+  },
+  {
+    id: 'faca-002',
+    code: 'FC-002',
+    name: 'Faca Rústica 8" Brut de Forge',
+    price: 1250,
+    category: 'RÚSTICAS',
+    steelType: 'Aço Carbono 5160 Forjado',
+    handleMaterial: 'Chifre de Cervo Vermelho com Espaçador Duralumínio',
+    length: '8" (20cm)',
+    quantity: 3,
+    isOutofStock: false,
+    images: [
+      'https://images.unsplash.com/photo-1589182373726-e4f658ab50f0?auto=format&fit=crop&q=80&w=1000',
+      'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000'
+    ]
+  },
+  {
+    id: 'faca-003',
+    code: 'FC-003',
+    name: 'Faca Tradicional Gaúcha 9" Inox',
+    price: 1180,
+    category: 'TRADICIONAIS',
+    steelType: 'Aço Inox D2 de Alta Retenção',
+    handleMaterial: 'Cerne de Guajuvira e Alpaca',
+    length: '9" (23cm)',
+    quantity: 4,
+    isOutofStock: false,
+    images: [
+      'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=1000'
+    ]
+  },
+  {
+    id: 'faca-004',
+    code: 'FC-004',
+    name: 'Faca de Time Comemorativa 8"',
+    price: 990,
+    category: 'TIMES',
+    steelType: 'Aço Inox 420C Alemão',
+    handleMaterial: 'Madeira Resinada Personalizada com Brasão em Latão',
+    length: '8" (20cm)',
+    quantity: 6,
+    isOutofStock: false,
+    images: [
+      'https://images.unsplash.com/photo-1589182373726-e4f658ab50f0?auto=format&fit=crop&q=80&w=1000'
+    ]
+  },
+  {
+    id: 'faca-005',
+    code: 'FC-005',
+    name: 'Faca de Colecionador Mosaico 12"',
+    price: 3400,
+    category: 'COLECIONADOR',
+    steelType: 'Aço Damasco Mosaico Exclusivo (15N20 + 1095)',
+    handleMaterial: 'Chifre de Cervo Canadense com Detalhes em Ouro e Prata',
+    length: '12" (30cm)',
+    quantity: 1,
+    isOutofStock: false,
+    images: [
+      'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&q=80&w=1000',
+      'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000'
+    ]
+  },
+  {
+    id: 'faca-006',
+    code: 'FC-006',
+    name: 'Faca Rústica Sorocabana 10"',
+    price: 1450,
+    category: 'RÚSTICAS',
+    steelType: 'Aço Carbono 1095',
+    handleMaterial: 'Osso Bovino Polido e Alpaca',
+    length: '10" (25cm)',
+    quantity: 0,
+    isOutofStock: true,
+    images: [
+      'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000'
+    ]
+  }
+];
+
+// Connected SSE clients for instantaneous real-time updates across all users
+const sseClients = new Set<express.Response>();
+
+function broadcastCatalogUpdate(type = 'knives_updated', data?: any) {
+  const payload = JSON.stringify({ type, data, timestamp: Date.now() });
+  console.log(`[Server] 📡 Broadcasting real-time event "${type}" to ${sseClients.size} connected client(s)...`);
+  for (const client of sseClients) {
+    try {
+      client.write(`data: ${payload}\n\n`);
+    } catch (e) {
+      sseClients.delete(client);
+    }
+  }
+}
+
 function normalizeKnifeData(knife: any) {
   let isSoldOut = false;
 
@@ -81,7 +192,7 @@ function loadKnivesFromDisk(): any[] {
       const data = fs.readFileSync(DATA_FILE, 'utf-8');
       if (data && data.trim()) {
         const parsed = JSON.parse(data);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map(normalizeKnifeData);
         }
       }
@@ -93,7 +204,7 @@ function loadKnivesFromDisk(): any[] {
         const bakData = fs.readFileSync(BACKUP_FILE, 'utf-8');
         if (bakData && bakData.trim()) {
           const parsedBak = JSON.parse(bakData);
-          if (Array.isArray(parsedBak)) {
+          if (Array.isArray(parsedBak) && parsedBak.length > 0) {
             const normalizedBak = parsedBak.map(normalizeKnifeData);
             saveKnivesToDisk(normalizedBak);
             return normalizedBak;
@@ -105,9 +216,9 @@ function loadKnivesFromDisk(): any[] {
     }
   }
 
-  const emptyList: any[] = [];
-  saveKnivesToDisk(emptyList);
-  return emptyList;
+  const initialList = DEFAULT_INITIAL_KNIVES.map(normalizeKnifeData);
+  saveKnivesToDisk(initialList);
+  return initialList;
 }
 
 function getKnives(): any[] {
@@ -352,9 +463,45 @@ function verifyAdminSession(req: express.Request): boolean {
 
 // REST API Endpoints
 
-// Public Catalog GET - Instant In-Memory Performance
+// Server-Sent Events (SSE) for 100% instantaneous real-time sync across all clients and browsers
+app.get('/api/events', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform, no-store');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+
+  sseClients.add(res);
+  console.log(`[SSE] Client connected. Total active connections: ${sseClients.size}`);
+
+  // Send immediate initial sync payload
+  const knives = getKnives();
+  res.write(`data: ${JSON.stringify({ type: 'connected', data: knives, timestamp: Date.now() })}\n\n`);
+
+  // Heartbeat to keep connection alive indefinitely
+  const keepAliveInterval = setInterval(() => {
+    try {
+      res.write(`: heartbeat\n\n`);
+    } catch (_) {
+      clearInterval(keepAliveInterval);
+      sseClients.delete(res);
+    }
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(keepAliveInterval);
+    sseClients.delete(res);
+    console.log(`[SSE] Client disconnected. Total active connections: ${sseClients.size}`);
+  });
+});
+
+// Public Catalog GET - Instant Fresh Real-Time Data without stale browser/proxy caching
 app.get('/api/knives', (req, res) => {
-  res.setHeader('Cache-Control', 'public, max-age=2, stale-while-revalidate=10');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   const knives = getKnives();
   const isAdmin = req.query.admin === 'true' || verifyAdminSession(req);
   const filtered = isAdmin ? knives : knives.filter((k: any) => !k.isHidden);
@@ -397,6 +544,7 @@ app.post('/api/knives', (req, res) => {
   knives.unshift(newKnife);
   saveKnivesToDisk(knives);
   console.log(`[Server] ✓ Faca salva com sucesso no arquivo JSON. Total de facas no catálogo: ${knives.length}`);
+  broadcastCatalogUpdate('knives_updated', knives);
   res.status(201).json(newKnife);
 });
 
@@ -459,6 +607,7 @@ app.put('/api/knives/:id', (req, res) => {
 
   saveKnivesToDisk(knives);
   console.log(`[Server] ✓ Faca atualizada em disco com sucesso.`);
+  broadcastCatalogUpdate('knives_updated', knives);
   res.json(finalKnife);
 });
 
@@ -469,6 +618,7 @@ app.delete('/api/knives/:id', (req, res) => {
   const initialCount = knives.length;
   knives = knives.filter((k: any) => String(k.id || '').trim() !== targetId && String(k.code || '').trim() !== targetId);
   saveKnivesToDisk(knives);
+  broadcastCatalogUpdate('knives_updated', knives);
   res.json({ success: true, id: targetId, deletedCount: initialCount - knives.length });
 });
 
@@ -498,6 +648,7 @@ app.post('/api/knives/duplicate/:id', (req, res) => {
   });
   knives.unshift(duplicated);
   saveKnivesToDisk(knives);
+  broadcastCatalogUpdate('knives_updated', knives);
   res.status(201).json(duplicated);
 });
 
@@ -507,12 +658,15 @@ app.post('/api/knives/import', (req, res) => {
     return res.status(400).json({ error: 'Expected an array of knives' });
   }
   saveKnivesToDisk(req.body);
+  broadcastCatalogUpdate('knives_updated', req.body);
   res.json({ success: true, count: req.body.length });
 });
 
 // Public Config GET
 app.get('/api/config', (req, res) => {
-  res.setHeader('Cache-Control', 'public, max-age=5, stale-while-revalidate=20');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   const config = getConfig();
   const publicConfig = { ...config, adminPin: undefined };
   res.json(publicConfig);
@@ -523,6 +677,7 @@ app.put('/api/config', (req, res) => {
   const current = getConfig();
   const updated = { ...current, ...req.body };
   saveConfigToDisk(updated);
+  broadcastCatalogUpdate('config_updated', updated);
   res.json({ success: true, config: updated });
 });
 

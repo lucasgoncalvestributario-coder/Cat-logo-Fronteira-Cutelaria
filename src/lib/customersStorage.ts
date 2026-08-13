@@ -1,3 +1,6 @@
+import { db } from './firebase';
+import { collection, doc, setDoc, getDocs, deleteDoc } from 'firebase/firestore';
+
 export interface Customer {
   id: string;
   name: string;           // Nome completo
@@ -10,6 +13,7 @@ export interface Customer {
 }
 
 const CUSTOMERS_KEY = 'cutelaria_customers_v1';
+const CUSTOMERS_COLLECTION = 'customers';
 
 export function getStoredCustomers(): Customer[] {
   try {
@@ -35,6 +39,23 @@ export function saveCustomersToStorage(customers: Customer[]): void {
 }
 
 export async function fetchCustomersAPI(): Promise<Customer[]> {
+  // 1. Try Firebase Firestore
+  try {
+    const colRef = collection(db, CUSTOMERS_COLLECTION);
+    const snap = await getDocs(colRef);
+    const list: Customer[] = [];
+    snap.forEach((d) => {
+      list.push({ ...(d.data() as Customer), id: d.id });
+    });
+    if (list.length > 0) {
+      saveCustomersToStorage(list);
+      return list;
+    }
+  } catch (err) {
+    console.warn('[CRM] Firestore customers fetch fallback:', err);
+  }
+
+  // 2. Try Express API
   try {
     const res = await fetch('/api/customers');
     if (res.ok) {
@@ -44,9 +65,8 @@ export async function fetchCustomersAPI(): Promise<Customer[]> {
         return data;
       }
     }
-  } catch (e) {
-    console.warn('API customers fetch failed, fallback to localStorage:', e);
-  }
+  } catch (e) {}
+
   return getStoredCustomers();
 }
 
@@ -76,6 +96,14 @@ export async function saveCustomerAPI(customer: Partial<Customer>): Promise<Cust
 
   saveCustomersToStorage(updatedList);
 
+  // Firestore sync
+  try {
+    const docRef = doc(db, CUSTOMERS_COLLECTION, id);
+    await setDoc(docRef, formatted, { merge: true });
+  } catch (e) {
+    console.warn('[CRM] Firestore save customer error:', e);
+  }
+
   try {
     const method = customer.id ? 'PUT' : 'POST';
     const url = customer.id ? `/api/customers/${customer.id}` : '/api/customers';
@@ -84,9 +112,7 @@ export async function saveCustomerAPI(customer: Partial<Customer>): Promise<Cust
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(formatted),
     });
-  } catch (e) {
-    console.warn('API customer save sync failed:', e);
-  }
+  } catch (_) {}
 
   return formatted;
 }
@@ -97,10 +123,13 @@ export async function deleteCustomerAPI(id: string): Promise<void> {
   saveCustomersToStorage(updatedList);
 
   try {
+    const docRef = doc(db, CUSTOMERS_COLLECTION, id);
+    await deleteDoc(docRef);
+  } catch (_) {}
+
+  try {
     await fetch(`/api/customers/${id}`, { method: 'DELETE' });
-  } catch (e) {
-    console.warn('API customer delete sync failed:', e);
-  }
+  } catch (_) {}
 }
 
 export async function incrementCustomerPurchasesAPI(id: string): Promise<Customer | null> {
