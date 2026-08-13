@@ -604,16 +604,15 @@ export function AdminPanelModal({
     try {
       console.log('[AdminPanel] 📡 Chamando onSaveKnife...');
       await onSaveKnife(knifeToSave);
-      console.log('[AdminPanel] ✓ Produto salvo e sincronizado com sucesso!');
+      console.log('[AdminPanel] ✓ Produto salvo e sincronizado com sucesso no Firestore universal!');
       setSaveMessage(`✓ Faca "${knifeToSave.name}" salva com sucesso no catálogo!`);
       setTimeout(() => setSaveMessage(''), 4000);
       setActiveTab('knives');
     } catch (err: any) {
-      console.error('[AdminPanel] ❌ Erro ao salvar produto:', err);
-      setFormErrorMessage(`Erro ao salvar no servidor: ${err?.message || 'Tente novamente'}. Salvando cópia local...`);
-      setSaveMessage('✓ Faca salva no catálogo local!');
-      setTimeout(() => setSaveMessage(''), 4000);
-      setActiveTab('knives');
+      console.error('[AdminPanel] ❌ Erro ao salvar produto no Firestore:', err);
+      setFormErrorMessage('Não foi possível salvar no banco de dados. Verifique sua conexão e tente novamente.');
+      setSaveMessage('⚠️ Não foi possível salvar no banco de dados. Verifique sua conexão e tente novamente.');
+      setTimeout(() => setSaveMessage(''), 5000);
     } finally {
       setIsSavingKnife(false);
     }

@@ -98,6 +98,7 @@ export function subscribeToConfigFirebase(
 
 /**
  * Save or update a knife in the central Firebase Firestore database.
+ * Throws explicit error if Firestore is unreachable or write fails.
  */
 export async function saveKnifeFirebase(knife: Knife): Promise<void> {
   const knifeId = knife.id || `faca-${Date.now()}`;
@@ -115,19 +116,30 @@ export async function saveKnifeFirebase(knife: Knife): Promise<void> {
   cleanData.id = knifeId;
   cleanData.updatedAt = new Date().toISOString();
 
-  await setDoc(knifeDocRef, cleanData, { merge: true });
-  console.log(`[Firebase] ✓ Faca "${knife.name}" gravada com sucesso no Firestore universal.`);
+  try {
+    await setDoc(knifeDocRef, cleanData, { merge: true });
+    console.log(`[Firebase] ✓ Faca "${knife.name}" gravada com sucesso no Firestore universal.`);
+  } catch (err: any) {
+    console.error(`[Firebase] ❌ Falha crítica ao gravar no Firestore:`, err);
+    throw new Error(`Não foi possível salvar no banco de dados. Verifique sua conexão e tente novamente.`);
+  }
 }
 
 /**
  * Delete a knife from the central Firebase Firestore database.
+ * Throws explicit error if Firestore is unreachable or delete fails.
  */
 export async function deleteKnifeFirebase(id: string): Promise<void> {
   const targetId = String(id || '').trim();
   console.log(`[Firebase] 🗑️ Removendo faca ID "${targetId}" do Firestore central...`);
   const knifeDocRef = doc(db, KNIVES_COLLECTION, targetId);
-  await deleteDoc(knifeDocRef);
-  console.log(`[Firebase] ✓ Faca removida com sucesso do Firestore universal.`);
+  try {
+    await deleteDoc(knifeDocRef);
+    console.log(`[Firebase] ✓ Faca removida com sucesso do Firestore universal.`);
+  } catch (err: any) {
+    console.error(`[Firebase] ❌ Falha ao excluir no Firestore:`, err);
+    throw new Error(`Não foi possível excluir do banco de dados. Verifique sua conexão e tente novamente.`);
+  }
 }
 
 /**
@@ -144,7 +156,7 @@ export async function fetchKnivesFirebase(): Promise<Knife[]> {
     return result;
   } catch (err) {
     console.error('[Firebase] Erro ao buscar facas do Firestore:', err);
-    return [];
+    throw err;
   }
 }
 

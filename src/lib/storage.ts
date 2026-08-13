@@ -1,6 +1,5 @@
 import { Knife, StoreConfig } from '../types';
 import { getNextKnifeCode } from './codeUtils';
-import { idbGetKnives, idbSaveKnives, idbPutKnife, idbDeleteKnife } from './indexedDbStorage';
 import {
   saveKnifeFirebase,
   deleteKnifeFirebase,
@@ -11,7 +10,6 @@ import {
 } from './firebase';
 import { INITIAL_KNIVES } from '../data/initialKnives';
 
-export const KNIVES_CACHE_KEY = 'cutelaria_knives_v1';
 export const FAVORITES_KEY = 'cutelaria_favorites_v1';
 export const CONFIG_KEY = 'cutelaria_config_v1';
 
@@ -39,35 +37,6 @@ export function safeSetLocalStorage(key: string, value: string): void {
     localStorage.setItem(key, value);
   } catch (err: any) {
     console.warn(`[Storage] localStorage quota exceeded or error for key "${key}":`, err?.message || err);
-
-    // Try clearing non-essential sales log cache to free space
-    try {
-      localStorage.removeItem('cutelaria_sales_log_v1');
-    } catch (_) {}
-
-    try {
-      localStorage.setItem(key, value);
-      return;
-    } catch (_) {}
-
-    // If storing knives cache, strip heavy data URLs so local storage cache fits within quota
-    if (key === KNIVES_CACHE_KEY) {
-      try {
-        const parsed = JSON.parse(value);
-        if (Array.isArray(parsed)) {
-          const stripped = parsed.map((item: Knife) => ({
-            ...item,
-            images: (item.images || []).map((img: string) =>
-              typeof img === 'string' && img.startsWith('data:') && img.length > 5000
-                ? img.substring(0, 100) + '...[cached]'
-                : img
-            )
-          }));
-          localStorage.setItem(key, JSON.stringify(stripped));
-          return;
-        }
-      } catch (_) {}
-    }
   }
 }
 
@@ -81,68 +50,22 @@ function getAdminAuthHeaders(): Record<string, string> {
 }
 
 export async function fetchKnives(isAdmin = false): Promise<Knife[]> {
-  console.log(`[Storage] 📥 Carregando catálogo central (modo ${isAdmin ? 'admin' : 'público'})...`);
+  console.log(`[Storage] 📥 Carregando catálogo central do Firebase Firestore (modo ${isAdmin ? 'admin' : 'público'})...`);
 
-  // 1. PRIMARY: Fetch from Firebase Firestore Central Database
+  // 1. SOLE AUTHORITATIVE SOURCE: Firebase Firestore Central Database
   try {
     await ensureFirestoreSeeded();
     const fbKnives = await fetchKnivesFirebase();
-    if (Array.isArray(fbKnives) && fbKnives.length > 0) {
+    if (Array.isArray(fbKnives)) {
       console.log(`[Storage] 🔥 ${fbKnives.length} facas carregadas diretamente do Firebase Firestore!`);
-      safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(fbKnives));
-      idbSaveKnives(fbKnives);
       return isAdmin ? fbKnives : fbKnives.filter((k: Knife) => !k.isHidden);
     }
-  } catch (err) {
-    console.warn('[Storage] Aviso ao consultar Firebase Firestore:', err);
+  } catch (err: any) {
+    console.error('[Storage] ❌ Erro ao consultar Firebase Firestore:', err);
+    throw new Error('Não foi possível conectar ao banco de dados central.');
   }
 
-  // 2. SECONDARY: Express Server API
-  try {
-    const headers = getAdminAuthHeaders();
-    const ts = Date.now();
-    const query = isAdmin ? `?admin=true&_t=${ts}` : `?_t=${ts}`;
-    const res = await fetch(`/api/knives${query}`, {
-      headers,
-      cache: 'no-store'
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        console.log(`[Storage] ✓ ${data.length} facas carregadas da API com sucesso.`);
-        safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(data));
-        idbSaveKnives(data);
-        return data;
-      }
-    }
-  } catch (err) {
-    console.warn('[Storage] API fallback error:', err);
-  }
-
-  // 3. Fallback IndexedDB
-  try {
-    const idbKnives = await idbGetKnives();
-    if (idbKnives && idbKnives.length > 0) {
-      console.log(`[Storage] ✓ ${idbKnives.length} facas recuperadas do IndexedDB.`);
-      return isAdmin ? idbKnives : idbKnives.filter((k: Knife) => !k.isHidden);
-    }
-  } catch (e) {
-    console.warn('[Storage] IndexedDB read error:', e);
-  }
-
-  // 4. Fallback localStorage
-  const cached = localStorage.getItem(KNIVES_CACHE_KEY);
-  if (cached) {
-    try {
-      const parsed = JSON.parse(cached);
-      console.log(`[Storage] ✓ ${parsed.length} facas recuperadas do LocalStorage.`);
-      return isAdmin ? parsed : parsed.filter((k: Knife) => !k.isHidden);
-    } catch (e) {
-      console.error('[Storage] Error parsing local cache:', e);
-    }
-  }
-
-  return INITIAL_KNIVES;
+  return [];
 }
 
 export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
@@ -184,81 +107,22 @@ export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
     isHidden: Boolean(knife.isHidden)
   };
 
-  console.log(`[Storage] 💾 Salvando faca "${normalizedKnife.name}" (ID: ${normalizedKnife.id}, Código: ${normalizedKnife.code}) no Firebase central...`);
+  console.log(`[Storage] 💾 Gravando faca "${normalizedKnife.name}" (ID: ${normalizedKnife.id}, Código: ${normalizedKnife.code}) exclusivamente no Firebase central...`);
 
-  // 1. PRIMARY: Save directly to Firebase Firestore universal database
-  try {
-    await saveKnifeFirebase(normalizedKnife);
-    console.log('[Storage] 🔥 Faca gravada com sucesso no Firebase Firestore universal!');
-  } catch (fbErr) {
-    console.error('[Storage] Erro ao gravar no Firebase Firestore:', fbErr);
-  }
-
-  // 2. Cache locally for instant UI response and offline safety
-  try {
-    await idbPutKnife(normalizedKnife);
-    const cached = localStorage.getItem(KNIVES_CACHE_KEY);
-    let list: Knife[] = cached ? JSON.parse(cached) : [];
-    const idx = list.findIndex(k => k.id === targetId || k.code === normalizedKnife.code);
-    if (idx >= 0) {
-      list[idx] = normalizedKnife;
-    } else {
-      list = [normalizedKnife, ...list];
-    }
-    safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(list));
-  } catch (err) {
-    console.warn('[Storage] Aviso ao salvar localmente:', err);
-  }
-
-  // 3. Sync to API backend if running in full-stack mode
-  try {
-    const url = isNew ? '/api/knives' : `/api/knives/${targetId}`;
-    const method = isNew ? 'POST' : 'PUT';
-    await fetch(url, {
-      method,
-      headers: getAdminAuthHeaders(),
-      body: JSON.stringify(normalizedKnife),
-    });
-  } catch (_) {}
+  // MANDATORY: Save directly to Firebase Firestore. Any failure throws explicit error.
+  await saveKnifeFirebase(normalizedKnife);
+  console.log('[Storage] 🔥 Faca confirmada com sucesso no Firebase Firestore!');
 
   return normalizedKnife;
 }
 
 export async function deleteKnifeFromApi(id: string): Promise<boolean> {
   const targetId = String(id || '').trim();
-  console.log(`[Storage] 🗑️ Excluindo faca ID: "${targetId}" do Firebase central...`);
+  console.log(`[Storage] 🗑️ Excluindo faca ID: "${targetId}" exclusivamente do Firebase central...`);
 
-  // 1. Delete from Firebase Firestore
-  try {
-    await deleteKnifeFirebase(targetId);
-    console.log('[Storage] 🔥 Faca excluída do Firebase Firestore.');
-  } catch (fbErr) {
-    console.error('[Storage] Erro ao excluir do Firebase:', fbErr);
-  }
-
-  // 2. Delete from local caches
-  try {
-    await idbDeleteKnife(targetId);
-  } catch (_) {}
-
-  const cached = localStorage.getItem(KNIVES_CACHE_KEY);
-  if (cached) {
-    try {
-      const list: Knife[] = JSON.parse(cached);
-      const filtered = list.filter(k => String(k.id || '').trim() !== targetId && String(k.code || '').trim() !== targetId);
-      safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(filtered));
-    } catch (e) {
-      console.error('[Storage] Error updating cache on delete:', e);
-    }
-  }
-
-  // 3. Sync delete with API backend
-  try {
-    await fetch(`/api/knives/${targetId}`, {
-      method: 'DELETE',
-      headers: getAdminAuthHeaders(),
-    });
-  } catch (_) {}
+  // MANDATORY: Delete directly from Firebase Firestore.
+  await deleteKnifeFirebase(targetId);
+  console.log('[Storage] 🔥 Faca excluída do Firebase Firestore.');
 
   return true;
 }
@@ -283,8 +147,6 @@ export async function importCatalogToApi(catalog: Knife[]): Promise<boolean> {
   for (const item of catalog) {
     await saveKnifeFirebase(item);
   }
-  await idbSaveKnives(catalog);
-  safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(catalog));
   return true;
 }
 

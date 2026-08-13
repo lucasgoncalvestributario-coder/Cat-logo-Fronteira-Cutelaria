@@ -6,11 +6,8 @@ import {
   deleteKnifeFromApi,
   importCatalogToApi,
   fetchStoreConfig,
-  saveStoreConfig,
-  safeSetLocalStorage,
-  KNIVES_CACHE_KEY
+  saveStoreConfig
 } from './lib/storage';
-import { idbSaveKnives } from './lib/indexedDbStorage';
 import { subscribeToKnivesFirebase, subscribeToConfigFirebase } from './lib/firebase';
 import { generateGeneralWhatsAppLink } from './lib/whatsapp';
 import { isSameCategory } from './lib/categories';
@@ -90,11 +87,9 @@ export default function App() {
 
     try {
       unsubKnives = subscribeToKnivesFirebase((liveKnives) => {
-        if (Array.isArray(liveKnives) && liveKnives.length > 0) {
+        if (Array.isArray(liveKnives)) {
           console.log('[Firebase Live] 🔥 Atualização universal recebida do Firestore:', liveKnives.length, 'facas');
           setKnives(liveKnives);
-          safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(liveKnives));
-          idbSaveKnives(liveKnives);
         }
       });
 
@@ -117,8 +112,6 @@ export default function App() {
           const payload = JSON.parse(event.data);
           if (payload.type === 'knives_updated' && Array.isArray(payload.data)) {
             setKnives(payload.data);
-            safeSetLocalStorage(KNIVES_CACHE_KEY, JSON.stringify(payload.data));
-            idbSaveKnives(payload.data);
           } else if (payload.type === 'config_updated' && payload.data) {
             setConfig((prev) => ({ ...prev, ...payload.data }));
           }
