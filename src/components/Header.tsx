@@ -1,6 +1,5 @@
 import { Lock, Smartphone } from 'lucide-react';
 import { StoreConfig } from '../types';
-import { Logo } from './Logo';
 
 interface HeaderProps {
   config: StoreConfig;
@@ -15,14 +14,13 @@ export function Header({ config, onOpenAdmin, onOpenInstallModal }: HeaderProps)
   return (
     <header className="sticky top-0 z-40 bg-[#0d0e12]/95 backdrop-blur-md border-b border-white/10 py-3 px-4 shadow-xl">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
-        {/* Official Logo & Store Name */}
+        {/* Official Store Name */}
         <div className="flex items-center gap-2.5 sm:gap-3.5">
-          <Logo className="w-14 h-14 sm:w-20 sm:h-20 shrink-0" />
           <div>
-            <h1 className="font-serif-luxury text-base sm:text-2xl font-extrabold tracking-wider text-white uppercase flex items-center gap-2">
+            <h1 className="font-serif-luxury text-lg sm:text-2xl font-black tracking-wider text-white uppercase flex items-center gap-2 drop-shadow-sm">
               {storeTitle}
             </h1>
-            <p className="text-[10px] sm:text-sm text-[#ff6b00] font-bold tracking-widest uppercase">
+            <p className="text-[10px] sm:text-xs text-[#ff6b00] font-extrabold tracking-[0.2em] uppercase">
               facas artesanais
             </p>
           </div>

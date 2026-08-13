@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Download, Smartphone, X, Check, Share, PlusSquare } from 'lucide-react';
-import { Logo } from './Logo';
 
 interface PWAInstallPromptProps {
   isOpen: boolean;
@@ -42,13 +41,17 @@ export function PWAInstallPrompt({ isOpen, onClose, deferredPrompt, onInstalled 
         </button>
 
         <div className="text-center space-y-3">
-          {/* Exact official logo of Fronteira Cutelaria */}
-          <div className="flex justify-center">
-            <Logo className="w-20 h-20" />
+          <div className="py-2">
+            <h2 className="font-serif-luxury text-2xl font-black text-white tracking-wider uppercase">
+              FRONTEIRA CUTELARIA
+            </h2>
+            <p className="text-[10px] text-[#ff6b00] font-extrabold tracking-[0.25em] uppercase">
+              FACAS ARTESANAIS
+            </p>
           </div>
 
-          <h3 className="font-serif-luxury text-xl font-bold text-white">
-            Instalar o App Fronteira Cutelaria
+          <h3 className="font-serif-luxury text-lg font-bold text-zinc-200">
+            Instalar Aplicativo Oficial
           </h3>
 
           <p className="text-xs text-zinc-300 leading-relaxed max-w-xs mx-auto">
