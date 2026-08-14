@@ -190,26 +190,10 @@ export async function fetchConfigFirebase(): Promise<StoreConfig | null> {
 }
 
 /**
- * Batch seed/import initial knives if database is empty.
+ * No auto-seeding: Firestore collection 'knives' is the sole authoritative source.
+ * When empty, it stays empty until the administrator explicitly creates products.
  */
-export async function seedInitialKnivesIfEmpty(initialKnives: Knife[]): Promise<void> {
-  try {
-    const existing = await fetchKnivesFirebase();
-    if (existing.length === 0 && initialKnives.length > 0) {
-      console.log(`[Firebase] 🌱 Banco central vazio. Inicializando com ${initialKnives.length} facas padrão...`);
-      const batch = writeBatch(db);
-      for (const knife of initialKnives) {
-        const knifeDocRef = doc(db, KNIVES_COLLECTION, knife.id);
-        batch.set(knifeDocRef, {
-          ...knife,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
-      }
-      await batch.commit();
-      console.log('[Firebase] ✓ Catálogo inicial populado com sucesso no Firestore.');
-    }
-  } catch (err) {
-    console.warn('[Firebase] Aviso ao inicializar semente no Firestore:', err);
-  }
+export async function seedInitialKnivesIfEmpty(_initialKnives: Knife[]): Promise<void> {
+  // Deliberately no-op: never populate mock/initial knives automatically
 }
+

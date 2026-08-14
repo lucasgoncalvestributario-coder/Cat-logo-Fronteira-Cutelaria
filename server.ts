@@ -216,9 +216,10 @@ function loadKnivesFromDisk(): any[] {
     }
   }
 
-  const initialList = DEFAULT_INITIAL_KNIVES.map(normalizeKnifeData);
-  saveKnivesToDisk(initialList);
-  return initialList;
+  if (fs.existsSync(DATA_FILE)) {
+    return [];
+  }
+  return [];
 }
 
 function getKnives(): any[] {

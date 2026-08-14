@@ -5,10 +5,8 @@ import {
   deleteKnifeFirebase,
   fetchKnivesFirebase,
   saveConfigFirebase,
-  fetchConfigFirebase,
-  seedInitialKnivesIfEmpty
+  fetchConfigFirebase
 } from './firebase';
-import { INITIAL_KNIVES } from '../data/initialKnives';
 
 export const FAVORITES_KEY = 'cutelaria_favorites_v1';
 export const CONFIG_KEY = 'cutelaria_config_v1';
@@ -19,18 +17,6 @@ export const DEFAULT_CONFIG: StoreConfig = {
   adminPin: '251127',
   welcomeMessage: 'Olá! Gostaria de mais informações sobre o catálogo da Fronteira Cutelaria.'
 };
-
-// Auto seed Firestore on first load if empty
-let isSeededChecked = false;
-export async function ensureFirestoreSeeded(): Promise<void> {
-  if (isSeededChecked) return;
-  isSeededChecked = true;
-  try {
-    await seedInitialKnivesIfEmpty(INITIAL_KNIVES);
-  } catch (e) {
-    console.warn('[Storage] Seed check error:', e);
-  }
-}
 
 export function safeSetLocalStorage(key: string, value: string): void {
   try {
@@ -54,7 +40,6 @@ export async function fetchKnives(isAdmin = false): Promise<Knife[]> {
 
   // 1. SOLE AUTHORITATIVE SOURCE: Firebase Firestore Central Database
   try {
-    await ensureFirestoreSeeded();
     const fbKnives = await fetchKnivesFirebase();
     if (Array.isArray(fbKnives)) {
       console.log(`[Storage] 🔥 ${fbKnives.length} facas carregadas diretamente do Firebase Firestore!`);

@@ -323,16 +323,24 @@ export default function App() {
               /* No Results Found State */
               <div className="p-10 text-center rounded-3xl bg-metallic-card border border-white/10 my-6 space-y-3">
                 <span className="text-4xl">🗡️</span>
-                <h3 className="font-serif-luxury text-lg font-bold text-white">Nenhuma faca encontrada nesta categoria</h3>
+                <h3 className="font-serif-luxury text-lg font-bold text-white">
+                  {knives.length === 0
+                    ? 'Nenhum produto cadastrado no momento'
+                    : 'Nenhuma faca encontrada nesta categoria'}
+                </h3>
                 <p className="text-xs text-zinc-400">
-                  Selecione outra categoria para visualizar os modelos disponíveis.
+                  {knives.length === 0
+                    ? 'O catálogo está vazio. Novos modelos serão adicionados em breve pelo administrador.'
+                    : 'Selecione outra categoria para visualizar os modelos disponíveis.'}
                 </p>
-                <button
-                  onClick={() => setFilter({ category: 'TODAS', searchQuery: '', steelFilter: '', sortBy: 'featured' })}
-                  className="px-4 py-2 rounded-xl bg-[#ff6b00] text-white text-xs font-bold cursor-pointer hover:brightness-110 uppercase"
-                >
-                  Ver Todas as Facas
-                </button>
+                {knives.length > 0 && (
+                  <button
+                    onClick={() => setFilter({ category: 'TODAS', searchQuery: '', steelFilter: '', sortBy: 'featured' })}
+                    className="px-4 py-2 rounded-xl bg-[#ff6b00] text-white text-xs font-bold cursor-pointer hover:brightness-110 uppercase"
+                  >
+                    Ver Todas as Facas
+                  </button>
+                )}
               </div>
             )}
           </div>
