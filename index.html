@@ -24,6 +24,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <title>FRONTEIRA CUTELARIA | Catálogo Premium</title>
+    <script>
+      // Clear stale service worker caches on startup to guarantee real-time Firestore sync
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          for (var name of names) {
+            if (name === 'cutelaria-v1' || name === 'cutelaria-v2') {
+              caches.delete(name);
+            }
+          }
+        });
+      }
+    </script>
   </head>
   <body class="bg-[#0d0e12] text-zinc-100 antialiased selection:bg-[#ff6b00] selection:text-white overflow-x-hidden">
     <div id="root"></div>

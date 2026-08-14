@@ -4,7 +4,7 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyBULwAyVqjGDoTyY9prVqa-VUQWcaZQEHc"
+  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyAgXrq4G1pcuTgVTJqRvOmyN3yNHg-hlR4,AIzaSyBULwAyVqjGDoTyY9prVqa-VUQWcaZQEHc"
 
 [[redirects]]
   from = "/*"
