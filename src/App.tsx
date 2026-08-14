@@ -8,7 +8,11 @@ import {
   fetchStoreConfig,
   saveStoreConfig
 } from './lib/storage';
-import { subscribeToKnivesFirebase, subscribeToConfigFirebase } from './lib/firebase';
+import {
+  subscribeToKnivesFirebase,
+  subscribeToConfigFirebase,
+  safeMigrateLocalDataToFirestore
+} from './lib/firebase';
 import { generateGeneralWhatsAppLink } from './lib/whatsapp';
 import { isSameCategory } from './lib/categories';
 
@@ -76,26 +80,38 @@ export default function App() {
     } catch (_) {}
   }, []);
 
-  // Initial Data Load, Firebase Real-Time Firestore Sync & Window Focus Listener
+  // Initial Data Load, Firebase Real-Time Firestore Sync & Safe Migration (Mount Once)
   useEffect(() => {
+    // 0. Immediate fetch from Firestore and local hydration
     loadData();
+    (async () => {
+      try {
+        const { idbGetKnives } = await import('./lib/indexedDbStorage');
+        const local = await idbGetKnives();
+        if (Array.isArray(local) && local.length > 0) {
+          setKnives((prev) => (prev.length === 0 ? local : prev));
+        }
+      } catch (_) {}
+    })();
 
-    // 1. PRIMARY: Real-time synchronization via Firebase Firestore onSnapshot
-    // Instantaneous universal broadcast across all devices, browsers and Netlify clients worldwide
+    // 1. Safe background migration: check if any real user knives exist locally on this device/notebook and sync to Firestore
+    safeMigrateLocalDataToFirestore().catch(() => {});
+
+    // 2. PRIMARY: Real-time synchronization via Firebase Firestore onSnapshot
+    // Instantaneous universal broadcast across all devices, browsers and clients worldwide
+    // Note: onSnapshot automatically provides the initial documents immediately upon registration without extra getDocs!
     let unsubKnives: (() => void) | null = null;
     let unsubConfig: (() => void) | null = null;
 
     try {
       unsubKnives = subscribeToKnivesFirebase((liveKnives) => {
         if (Array.isArray(liveKnives)) {
-          console.log('[Firebase Live] 🔥 Atualização universal recebida do Firestore:', liveKnives.length, 'facas');
           setKnives(liveKnives);
         }
       });
 
       unsubConfig = subscribeToConfigFirebase((liveConfig) => {
         if (liveConfig) {
-          console.log('[Firebase Live] 🔥 Configuração atualizada do Firestore:', liveConfig);
           setConfig((prev) => ({ ...prev, ...liveConfig }));
         }
       });
@@ -103,7 +119,7 @@ export default function App() {
       console.warn('[Firebase] Erro ao conectar listener:', fbErr);
     }
 
-    // 2. SECONDARY: Server-Sent Events (SSE) fallback for local dev / express proxy
+    // 4. SECONDARY: Server-Sent Events (SSE) fallback for local dev / express proxy
     let eventSource: EventSource | null = null;
     try {
       eventSource = new EventSource('/api/events');
@@ -120,24 +136,7 @@ export default function App() {
       eventSource.onerror = () => {};
     } catch (_) {}
 
-    // 3. Re-sync immediately whenever the user switches back to this tab or unlocks their phone
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        loadData();
-      }
-    };
-    const handleWindowFocus = () => {
-      loadData();
-    };
-    const handleOnline = () => {
-      loadData();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleWindowFocus);
-    window.addEventListener('online', handleOnline);
-
-    // 4. Register Service Worker
+    // 5. Register Service Worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
         console.warn('SW registration failed:', err);
@@ -172,23 +171,14 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
-    // Periodic backup sync
-    const interval = setInterval(() => {
-      loadData();
-    }, 6000);
-
     return () => {
       if (unsubKnives) unsubKnives();
       if (unsubConfig) unsubConfig();
       if (eventSource) eventSource.close();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleWindowFocus);
-      window.removeEventListener('online', handleOnline);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
-      clearInterval(interval);
     };
-  }, [loadData]);
+  }, []);
 
   // Helper to normalize strings for category comparison (handles accents, spaces, upper/lowercase)
   const normalizeCat = (cat: string) =>
@@ -234,7 +224,19 @@ export default function App() {
   const handleSaveKnife = async (knifeToSave: Partial<Knife>) => {
     console.log('[App] 🚀 handleSaveKnife recebido:', knifeToSave);
     try {
-      const saved = await saveKnifeToApi(knifeToSave);
+      // Safely merge with existing knife data in memory to guarantee images and other fields are never lost
+      const existing = knives.find((k) => k.id === knifeToSave.id || (knifeToSave.code && k.code === knifeToSave.code));
+      const fullKnife: Partial<Knife> = existing
+        ? {
+            ...existing,
+            ...knifeToSave,
+            images: (knifeToSave.images && knifeToSave.images.length > 0)
+              ? knifeToSave.images
+              : (existing.images && existing.images.length > 0 ? existing.images : []),
+          }
+        : knifeToSave;
+
+      const saved = await saveKnifeToApi(fullKnife);
       console.log('[App] ✓ Faca retornada por saveKnifeToApi:', saved);
       setKnives((prev) => {
         const idx = prev.findIndex((item) => item.id === saved.id || (saved.code && item.code === saved.code));
@@ -311,10 +313,11 @@ export default function App() {
             {/* Catalog Grid */}
             {filteredKnives.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 my-2 sm:my-4">
-                {filteredKnives.map((knife) => (
+                {filteredKnives.map((knife, idx) => (
                   <KnifeCard
                     key={knife.id}
                     knife={knife}
+                    index={idx}
                     onClickCard={handleOpenKnifeDetail}
                   />
                 ))}

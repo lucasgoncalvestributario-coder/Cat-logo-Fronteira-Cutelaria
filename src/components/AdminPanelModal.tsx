@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Lock, X, Plus, Edit, Trash2, Eye, Upload, Settings, AlertCircle, Save, CheckCircle, FolderPlus, ShoppingBag, DollarSign, Calendar, TrendingUp, Package, RotateCcw, AlertTriangle, CheckCircle2, Search, Flame, Users, Gift, Cake, FileBarChart, Home, Volume2, VolumeX, Sparkles, Tag, Printer } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { Lock, X, Plus, Edit, Trash2, Eye, Upload, Settings, AlertCircle, Save, CheckCircle, FolderPlus, ShoppingBag, DollarSign, Calendar, TrendingUp, Package, RotateCcw, AlertTriangle, CheckCircle2, Search, Flame, Users, Gift, Cake, FileBarChart, Home, Volume2, VolumeX, Sparkles, Tag, Printer, Download, RefreshCw } from 'lucide-react';
 import { Knife, StoreConfig, Category } from '../types';
 import { formatCurrencyBRL, generateKnifeWhatsAppLink } from '../lib/whatsapp';
 import { BASE_CATEGORIES, getAllCategories, saveCategory, deleteCategory, isSameCategory } from '../lib/categories';
@@ -11,6 +11,7 @@ import { SelectCustomerSaleModal } from './SelectCustomerSaleModal';
 import { SalesReportModal } from './SalesReportModal';
 import { Customer, getStoredCustomers, getBirthdayMatches, getCustomerLastPurchaseInfo } from '../lib/customersStorage';
 import { playVaniVoiceReport, stopVoiceReport } from '../lib/adminVoiceReport';
+import { subscribeToSalesFirebase } from '../lib/firebase';
 
 export const DEFAULT_STEEL_TYPES = [
   'Disco de Arado',
@@ -57,12 +58,16 @@ export function AdminPanelModal({
   knives,
   onSaveKnife,
   onDeleteKnife,
+  onImportCatalog,
   config,
   onSaveConfig,
 }: AdminPanelModalProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [authError, setAuthError] = useState('');
+  const [isSyncingFirestore, setIsSyncingFirestore] = useState(false);
+  const [syncStatusMsg, setSyncStatusMsg] = useState('');
+  const backupFileInputRef = useRef<HTMLInputElement>(null);
 
   // Sub-tabs in admin panel: 'knives' | 'vendas' | 'crm' | 'categories' | 'form' | 'settings'
   const [activeTab, setActiveTab] = useState<'knives' | 'vendas' | 'crm' | 'categories' | 'form' | 'settings'>('knives');
@@ -187,6 +192,8 @@ export function AdminPanelModal({
 
   // Always require authentication every time Admin modal is opened
   React.useEffect(() => {
+    let unsubSales: (() => void) | null = null;
+
     if (isOpen) {
       setIsAuthenticated(false);
       setPinInput('');
@@ -196,11 +203,14 @@ export function AdminPanelModal({
         localStorage.removeItem('admin_token');
       }
       setSalesLog(getStoredSalesLog());
-      fetchSalesLogAPI().then((apiSales) => {
-        if (apiSales && Array.isArray(apiSales)) {
-          setSalesLog(apiSales);
-        }
-      });
+
+      try {
+        unsubSales = subscribeToSalesFirebase((liveSales) => {
+          if (Array.isArray(liveSales) && liveSales.length > 0) {
+            setSalesLog(liveSales);
+          }
+        });
+      } catch (_) {}
     } else {
       setIsAuthenticated(false);
       setPinInput('');
@@ -212,6 +222,12 @@ export function AdminPanelModal({
         localStorage.removeItem('admin_token');
       }
     }
+
+    return () => {
+      if (unsubSales) {
+        unsubSales();
+      }
+    };
   }, [isOpen]);
 
   // Clean up session token on tab or browser window unload
@@ -443,7 +459,7 @@ export function AdminPanelModal({
     setEditingKnife({
       name: '',
       code: getNextKnifeCode(knives),
-      price: 1200,
+      price: 0,
       isOnSale: false,
       originalPrice: undefined,
       promotionalPrice: undefined,
@@ -456,9 +472,7 @@ export function AdminPanelModal({
       isOutofStock: false,
       images: [],
     });
-    setKnifeImages([
-      'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000'
-    ]);
+    setKnifeImages([]);
     setActiveTab('form');
   };
 
@@ -569,8 +583,7 @@ export function AdminPanelModal({
       }
     }
 
-    const defaultImg = 'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000';
-    const finalImages = knifeImages.length > 0 ? knifeImages : [defaultImg];
+    const finalImages = knifeImages.length > 0 ? knifeImages : [];
 
     const knifeToSave: Knife = {
       id: editingKnife.id || `faca-${Date.now()}`,
@@ -654,7 +667,7 @@ export function AdminPanelModal({
 
     // 2. Automatically subtract 1 from stock and update status
     await onSaveKnife({
-      id: knife.id,
+      ...knife,
       quantity: newQty,
       isOutofStock: isSoldOut,
       status: isSoldOut ? 'esgotado' : 'disponivel',
@@ -691,7 +704,7 @@ export function AdminPanelModal({
       const restoredQty = currentQty + 1;
 
       await onSaveKnife({
-        id: targetKnife.id,
+        ...targetKnife,
         quantity: restoredQty,
         isOutofStock: false,
         status: 'disponivel',
@@ -716,7 +729,7 @@ export function AdminPanelModal({
     const newQty = Math.max(1, currentQty + amountToAdd);
 
     await onSaveKnife({
-      id: knife.id,
+      ...knife,
       quantity: newQty,
       isOutofStock: false,
       status: 'disponivel',
@@ -741,7 +754,7 @@ export function AdminPanelModal({
     if (isCurrentlySoldOut) {
       // REATIVAR FACA (DISPONÍVEL)
       await onSaveKnife({
-        id: knife.id,
+        ...knife,
         isOutofStock: false,
         status: 'disponivel',
         quantity: knife.quantity && knife.quantity > 0 ? knife.quantity : 1,
@@ -751,7 +764,7 @@ export function AdminPanelModal({
     } else {
       // MARCAR COMO ESGOTADO
       await onSaveKnife({
-        id: knife.id,
+        ...knife,
         isOutofStock: true,
         status: 'esgotado',
         quantity: 0,
@@ -1097,7 +1110,7 @@ export function AdminPanelModal({
                                     const val = Math.max(0, parseInt(e.target.value) || 0);
                                     const isSold = val === 0;
                                     onSaveKnife({
-                                      id: knife.id,
+                                      ...knife,
                                       quantity: val,
                                       isOutofStock: isSold,
                                       status: isSold ? 'esgotado' : 'disponivel',
@@ -1709,7 +1722,8 @@ export function AdminPanelModal({
                         type="number"
                         step="1"
                         required
-                        value={editingKnife.price || 0}
+                        placeholder="Ex: 450"
+                        value={editingKnife.price || ''}
                         onChange={(e) => setEditingKnife({ ...editingKnife, price: parseFloat(e.target.value) || 0 })}
                         className={`w-full p-2.5 rounded-xl bg-[#161822] border font-bold transition-colors ${
                           isKnifePriceInvalid
@@ -2218,50 +2232,165 @@ export function AdminPanelModal({
 
               {/* TAB 3: SETTINGS & WHATSAPP */}
               {activeTab === 'settings' && (
-                <form onSubmit={handleSaveSettingsSubmit} className="space-y-4 text-xs">
-                  <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest border-b border-white/10 pb-2">
-                    Configurações da Loja
-                  </h3>
+                <div className="space-y-6 text-xs">
+                  <form onSubmit={handleSaveSettingsSubmit} className="space-y-4 text-xs">
+                    <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest border-b border-white/10 pb-2">
+                      Configurações da Loja
+                    </h3>
 
-                  <div>
-                    <label className="block text-zinc-400 mb-1">Número do WhatsApp (com DDD e 55) *</label>
-                    <input
-                      type="text"
-                      required
-                      value={settingsForm.whatsappNumber}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, whatsappNumber: e.target.value })}
-                      placeholder="Ex: 554792787901"
-                      className="w-full p-2.5 rounded-xl bg-[#161822] border border-white/10 text-white font-mono"
-                    />
+                    <div>
+                      <label className="block text-zinc-400 mb-1">Número do WhatsApp (com DDD e 55) *</label>
+                      <input
+                        type="text"
+                        required
+                        value={settingsForm.whatsappNumber}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, whatsappNumber: e.target.value })}
+                        placeholder="Ex: 554792787901"
+                        className="w-full p-2.5 rounded-xl bg-[#161822] border border-white/10 text-white font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-zinc-400 mb-1">Nome da Cutelaria</label>
+                      <input
+                        type="text"
+                        value={settingsForm.storeName}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, storeName: e.target.value })}
+                        className="w-full p-2.5 rounded-xl bg-[#161822] border border-white/10 text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-zinc-400 mb-1">Senha de Administrador (PIN)</label>
+                      <input
+                        type="text"
+                        value={settingsForm.adminPin || '251127'}
+                        onChange={(e) => setSettingsForm({ ...settingsForm, adminPin: e.target.value })}
+                        className="w-full p-2.5 rounded-xl bg-[#161822] border border-white/10 text-white font-mono"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-3 rounded-xl bg-gradient-to-r from-[#ff6b00] to-[#e05600] text-white font-bold text-sm uppercase cursor-pointer hover:brightness-110"
+                    >
+                      Salvar Configurações
+                    </button>
+                  </form>
+
+                  {/* BACKUP, EXPORT & SYNC SECTION */}
+                  <div className="space-y-3 pt-4 border-t border-white/10">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-bold text-amber-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <Package className="w-4 h-4" />
+                        <span>Backup & Sincronização em Nuvem</span>
+                      </h3>
+                      <span className="text-[10px] text-zinc-400 bg-white/5 px-2 py-0.5 rounded-lg">
+                        {knives.length} {knives.length === 1 ? 'faca' : 'facas'} na memória
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-zinc-400">
+                      Exporte o catálogo para um arquivo de segurança no seu computador ou restaure suas facas em qualquer dispositivo.
+                    </p>
+
+                    {syncStatusMsg && (
+                      <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 shrink-0 text-amber-400" />
+                        <span>{syncStatusMsg}</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {/* Button: Export Backup JSON */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const dataStr = JSON.stringify(knives, null, 2);
+                          const blob = new Blob([dataStr], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.download = `backup-facas-fronteira-${new Date().toISOString().slice(0, 10)}.json`;
+                          link.click();
+                          URL.revokeObjectURL(url);
+                          setSyncStatusMsg(`Backup de ${knives.length} facas exportado com sucesso!`);
+                        }}
+                        disabled={knives.length === 0}
+                        className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Download className="w-4 h-4 text-emerald-400" />
+                        <span>Baixar Backup (JSON)</span>
+                      </button>
+
+                      {/* Button: Import Backup JSON */}
+                      <button
+                        type="button"
+                        onClick={() => backupFileInputRef.current?.click()}
+                        className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      >
+                        <Upload className="w-4 h-4 text-blue-400" />
+                        <span>Restaurar Backup (JSON)</span>
+                      </button>
+                      <input
+                        ref={backupFileInputRef}
+                        type="file"
+                        accept=".json,application/json"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = async (event) => {
+                            try {
+                              const parsed = JSON.parse(event.target?.result as string);
+                              if (Array.isArray(parsed) && parsed.length > 0) {
+                                if (onImportCatalog) {
+                                  await onImportCatalog(parsed);
+                                }
+                                setSyncStatusMsg(`${parsed.length} facas importadas e sincronizadas na nuvem com sucesso!`);
+                              } else {
+                                alert('Arquivo de backup inválido ou vazio.');
+                              }
+                            } catch (err) {
+                              alert('Erro ao processar o arquivo JSON de backup.');
+                            }
+                          };
+                          reader.readAsText(file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </div>
+
+                    {/* Button: Force Firestore Sync */}
+                    <button
+                      type="button"
+                      disabled={isSyncingFirestore}
+                      onClick={async () => {
+                        setIsSyncingFirestore(true);
+                        setSyncStatusMsg('Sincronizando facas com a nuvem central do Firebase...');
+                        try {
+                          const { safeMigrateLocalDataToFirestore } = await import('../lib/firebase');
+                          await safeMigrateLocalDataToFirestore();
+                          const { idbGetKnives } = await import('../lib/indexedDbStorage');
+                          const local = await idbGetKnives();
+                          if (local && local.length > 0 && onImportCatalog) {
+                            await onImportCatalog(local);
+                          }
+                          setSyncStatusMsg(`Sincronização concluída! Dados atualizados em tempo real.`);
+                        } catch (err) {
+                          setSyncStatusMsg('Falha na sincronização. Verifique a conexão de internet.');
+                        } finally {
+                          setIsSyncingFirestore(false);
+                        }
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-xs uppercase flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    >
+                      <RefreshCw className={`w-4 h-4 text-amber-400 ${isSyncingFirestore ? 'animate-spin' : ''}`} />
+                      <span>{isSyncingFirestore ? 'Sincronizando com a Nuvem...' : 'Forçar Sincronização com o Firebase'}</span>
+                    </button>
                   </div>
-
-                  <div>
-                    <label className="block text-zinc-400 mb-1">Nome da Cutelaria</label>
-                    <input
-                      type="text"
-                      value={settingsForm.storeName}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, storeName: e.target.value })}
-                      className="w-full p-2.5 rounded-xl bg-[#161822] border border-white/10 text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-zinc-400 mb-1">Senha de Administrador (PIN)</label>
-                    <input
-                      type="text"
-                      value={settingsForm.adminPin || '251127'}
-                      onChange={(e) => setSettingsForm({ ...settingsForm, adminPin: e.target.value })}
-                      className="w-full p-2.5 rounded-xl bg-[#161822] border border-white/10 text-white font-mono"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full py-3 rounded-xl bg-gradient-to-r from-[#ff6b00] to-[#e05600] text-white font-bold text-sm uppercase cursor-pointer hover:brightness-110"
-                  >
-                    Salvar Configurações
-                  </button>
-                </form>
+                </div>
               )}
             </div>
           </div>
@@ -2298,18 +2427,24 @@ export function AdminPanelModal({
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
               {/* Photo Area */}
               <div className="sm:col-span-6 relative aspect-square rounded-2xl overflow-hidden bg-black/60 border border-white/10 flex items-center justify-center shadow-lg">
-                <img
-                  src={previewKnife.images?.[0] || 'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000'}
-                  alt={previewKnife.name}
-                  referrerPolicy="no-referrer"
-                  className={`w-full h-full object-cover ${
-                    previewKnife.isOutofStock || (typeof previewKnife.quantity === 'number' && previewKnife.quantity <= 0) ? 'grayscale opacity-60' : ''
-                  }`}
-                />
+                {previewKnife.images?.[0] ? (
+                  <img
+                    src={previewKnife.images[0]}
+                    alt={previewKnife.name}
+                    referrerPolicy="no-referrer"
+                    className={`w-full h-full object-cover ${
+                      previewKnife.isOutofStock || (typeof previewKnife.quantity === 'number' && previewKnife.quantity <= 0)
+                        ? 'grayscale opacity-75 blur-[2px] contrast-110'
+                        : ''
+                    }`}
+                  />
+                ) : (
+                  <div className="text-zinc-600 font-mono text-xs uppercase tracking-wider">Sem Foto</div>
+                )}
 
                 {(previewKnife.isOutofStock || (typeof previewKnife.quantity === 'number' && previewKnife.quantity <= 0)) && (
-                  <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center">
-                    <span className="px-3 py-1 bg-red-600 text-white font-extrabold text-xs uppercase tracking-widest rounded-lg border border-red-400">
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                    <span className="px-3.5 py-1.5 bg-red-600 text-white font-extrabold text-xs uppercase tracking-widest rounded-lg border-2 border-red-400 shadow-xl">
                       ESGOTADA
                     </span>
                   </div>

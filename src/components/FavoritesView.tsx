@@ -48,10 +48,11 @@ export function FavoritesView({
       {/* Grid of Saved Knives */}
       {favoriteKnives.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-          {favoriteKnives.map((knife) => (
+          {favoriteKnives.map((knife, idx) => (
             <KnifeCard
               key={knife.id}
               knife={knife}
+              index={idx}
               isFavorite={true}
               onToggleFavorite={onToggleFavorite}
               onClickCard={onClickKnife}

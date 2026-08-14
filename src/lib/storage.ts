@@ -46,9 +46,19 @@ export async function fetchKnives(isAdmin = false): Promise<Knife[]> {
       return isAdmin ? fbKnives : fbKnives.filter((k: Knife) => !k.isHidden);
     }
   } catch (err: any) {
-    console.error('[Storage] ❌ Erro ao consultar Firebase Firestore:', err);
-    throw new Error('Não foi possível conectar ao banco de dados central.');
+    console.warn('[Storage] Aviso ao consultar Firebase Firestore:', err?.message || err);
   }
+
+  // 2. Secondary fallback for local proxy if available
+  try {
+    const res = await fetch('/api/knives');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return isAdmin ? data : data.filter((k: Knife) => !k.isHidden);
+      }
+    }
+  } catch (_) {}
 
   return [];
 }
@@ -62,10 +72,9 @@ export async function saveKnifeToApi(knife: Partial<Knife>): Promise<Knife> {
     (typeof knife.quantity === 'number' && knife.quantity <= 0)
   );
 
-  const defaultImg = 'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000';
-  const finalImages = (knife.images && knife.images.length > 0)
+  const finalImages = (knife.images && Array.isArray(knife.images))
     ? knife.images
-    : [defaultImg];
+    : [];
 
   const normalizedKnife: Knife = {
     id: targetId,

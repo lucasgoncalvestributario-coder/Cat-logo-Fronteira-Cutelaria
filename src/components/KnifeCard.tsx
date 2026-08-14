@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, Flame, Eye } from 'lucide-react';
+import { Sparkles, Flame, Eye, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Knife } from '../types';
 import { formatCurrencyBRL } from '../lib/whatsapp';
@@ -7,13 +7,14 @@ import { formatCurrencyBRL } from '../lib/whatsapp';
 export interface KnifeCardProps {
   key?: React.Key;
   knife: Knife;
+  index?: number;
   whatsappNumber?: string;
   onClickCard: (knife: Knife) => void;
   isFavorite?: boolean;
   onToggleFavorite?: (e: React.MouseEvent, id: string) => void;
 }
 
-export function KnifeCard({ knife, onClickCard }: KnifeCardProps) {
+export function KnifeCard({ knife, index = 0, onClickCard }: KnifeCardProps) {
   const isSoldOut = knife.isOutofStock || knife.status === 'esgotado' || (typeof knife.quantity === 'number' && knife.quantity <= 0);
   const isExclusive = Boolean(
     knife.isFeatured ||
@@ -23,16 +24,20 @@ export function KnifeCard({ knife, onClickCard }: KnifeCardProps) {
   const isLastUnit = !isSoldOut && typeof knife.quantity === 'number' && knife.quantity === 1;
   const isOnSale = Boolean(knife.isOnSale && knife.originalPrice && Number(knife.originalPrice) > Number(knife.price));
 
-  const mainImage = knife.images && knife.images.length > 0
-    ? knife.images[0]
-    : 'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=1000';
+  const mainImage = knife.images && knife.images.length > 0 ? knife.images[0] : '';
+  const staggerDelay = typeof index === 'number' ? Math.min((index % 5) * 0.06, 0.3) : 0;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-20px' }}
-      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      initial={{ opacity: 0, y: 28, scale: 0.98 }}
+      whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, margin: '-30px' }}
+      transition={{
+        duration: 0.55,
+        ease: [0.22, 1, 0.36, 1],
+        delay: staggerDelay,
+      }}
+      whileHover={{ y: -4, transition: { duration: 0.22, ease: 'easeOut' } }}
       onClick={() => onClickCard(knife)}
       className={`group relative bg-[#12141d] rounded-xl sm:rounded-2xl border ${
         isExclusive
@@ -91,23 +96,30 @@ export function KnifeCard({ knife, onClickCard }: KnifeCardProps) {
       )}
 
       {/* Knife Photo Header */}
-      <div className="relative aspect-[4/3] sm:aspect-4/3 w-full bg-[#0a0b0e] overflow-hidden">
-        <img
-          src={mainImage}
-          alt={knife.name}
-          referrerPolicy="no-referrer"
-          className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${
-            isSoldOut ? 'opacity-40 grayscale' : 'opacity-95'
-          }`}
-        />
+      <div className="relative aspect-[4/3] sm:aspect-4/3 w-full bg-[#0a0b0e] overflow-hidden flex items-center justify-center">
+        {mainImage ? (
+          <img
+            src={mainImage}
+            alt={knife.name}
+            referrerPolicy="no-referrer"
+            className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${
+              isSoldOut ? 'opacity-75 blur-[2.5px] grayscale contrast-110' : 'opacity-95'
+            }`}
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center text-zinc-600 gap-1.5 p-4">
+            <ImageIcon className="w-8 h-8 opacity-40" />
+            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Sem Foto</span>
+          </div>
+        )}
 
         {/* Subtle Blade Steel Reflection Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#12141d] via-transparent to-black/30 pointer-events-none" />
 
         {/* ESGOTADO Badge Overlay */}
         {isSoldOut && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-1.5 z-10">
-            <span className="px-2.5 py-0.5 sm:px-4 sm:py-1.5 bg-red-600/90 text-white font-extrabold text-[9px] sm:text-xs tracking-widest uppercase rounded-lg border border-red-400 shadow-2xl animate-pulse">
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center p-1.5 z-10">
+            <span className="px-3.5 py-1.5 sm:px-4 sm:py-1.5 bg-red-600 text-white font-extrabold text-xs sm:text-sm tracking-widest uppercase rounded-xl border-2 border-red-400 shadow-2xl drop-shadow-lg">
               ESGOTADO
             </span>
           </div>

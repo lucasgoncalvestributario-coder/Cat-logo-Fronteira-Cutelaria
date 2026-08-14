@@ -147,15 +147,15 @@ export function KnifeDetailModal({
                     referrerPolicy="no-referrer"
                     onClick={() => setIsGalleryOpen(true)}
                     className={`w-full h-full object-cover object-center cursor-pointer ${
-                      isSoldOut ? 'opacity-40 grayscale' : 'opacity-95'
+                      isSoldOut ? 'opacity-75 blur-[2.5px] grayscale contrast-110' : 'opacity-95'
                     }`}
                   />
                 </AnimatePresence>
 
                 {/* ESGOTADO Badge Overlay */}
                 {isSoldOut && (
-                  <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-2 z-20 pointer-events-none">
-                    <span className="px-5 py-2 bg-red-600 text-white font-extrabold text-base tracking-widest uppercase rounded-xl border border-red-400 shadow-2xl animate-pulse">
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center p-2 z-20 pointer-events-none">
+                    <span className="px-6 py-2.5 bg-red-600 text-white font-extrabold text-base sm:text-lg tracking-widest uppercase rounded-xl border-2 border-red-400 shadow-2xl drop-shadow-xl">
                       ESGOTADO
                     </span>
                   </div>

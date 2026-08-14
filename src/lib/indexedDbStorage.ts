@@ -26,12 +26,15 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 export async function idbSaveKnives(knives: Knife[]): Promise<void> {
+  if (!Array.isArray(knives)) {
+    return;
+  }
   try {
     const db = await openDB();
     const tx = db.transaction(STORE_KNIVES, 'readwrite');
     const store = tx.objectStore(STORE_KNIVES);
     
-    // Clear and re-populate
+    // Clear and re-populate with new list
     await new Promise<void>((resolve, reject) => {
       const clearReq = store.clear();
       clearReq.onsuccess = () => resolve();
@@ -39,7 +42,9 @@ export async function idbSaveKnives(knives: Knife[]): Promise<void> {
     });
 
     for (const k of knives) {
-      store.put(k);
+      if (k && k.id) {
+        store.put(k);
+      }
     }
 
     await new Promise<void>((resolve, reject) => {

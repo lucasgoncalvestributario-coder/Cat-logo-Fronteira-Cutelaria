@@ -39,6 +39,8 @@ console.log(`[Firebase] 🔥 Firestore conectado ao projeto "${firebaseConfig.pr
 const KNIVES_COLLECTION = 'knives';
 const CONFIG_COLLECTION = 'config';
 const CONFIG_DOC_ID = 'main_config';
+const SALES_COLLECTION = 'sales';
+const CUSTOMERS_COLLECTION = 'customers';
 
 /**
  * Real-time listener for the universal central knives catalog.
@@ -54,7 +56,7 @@ export function subscribeToKnivesFirebase(
   
   return onSnapshot(
     knivesCol,
-    (snapshot) => {
+    async (snapshot) => {
       const knivesList: Knife[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as Knife;
@@ -66,9 +68,13 @@ export function subscribeToKnivesFirebase(
 
       console.log(`[Firebase] ⚡ ${knivesList.length} facas sincronizadas em tempo real via Firestore.`);
       onUpdate(knivesList);
+      try {
+        const { idbSaveKnives } = await import('./indexedDbStorage');
+        await idbSaveKnives(knivesList);
+      } catch (_) {}
     },
     (error) => {
-      console.error('[Firebase] ❌ Erro no listener em tempo real do Firestore:', error);
+      console.warn('[Firebase] Aviso no listener em tempo real do Firestore:', error);
       if (onError) onError(error);
     }
   );
@@ -92,6 +98,57 @@ export function subscribeToConfigFirebase(
     },
     (err) => {
       console.warn('[Firebase] Aviso ao escutar configurações:', err);
+    }
+  );
+}
+
+/**
+ * Real-time listener for universal sales log
+ */
+export function subscribeToSalesFirebase(
+  onUpdate: (sales: any[]) => void
+): Unsubscribe {
+  const salesCol = collection(db, SALES_COLLECTION);
+  return onSnapshot(
+    salesCol,
+    (snapshot) => {
+      const salesList: any[] = [];
+      snapshot.forEach((docSnap) => {
+        salesList.push({
+          ...docSnap.data(),
+          id: docSnap.id,
+        });
+      });
+      salesList.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      onUpdate(salesList);
+    },
+    (err) => {
+      console.warn('[Firebase] Aviso ao escutar vendas:', err);
+    }
+  );
+}
+
+/**
+ * Real-time listener for universal customers CRM
+ */
+export function subscribeToCustomersFirebase(
+  onUpdate: (customers: any[]) => void
+): Unsubscribe {
+  const customersCol = collection(db, CUSTOMERS_COLLECTION);
+  return onSnapshot(
+    customersCol,
+    (snapshot) => {
+      const customersList: any[] = [];
+      snapshot.forEach((docSnap) => {
+        customersList.push({
+          ...docSnap.data(),
+          id: docSnap.id,
+        });
+      });
+      onUpdate(customersList);
+    },
+    (err) => {
+      console.warn('[Firebase] Aviso ao escutar clientes:', err);
     }
   );
 }
@@ -154,9 +211,13 @@ export async function fetchKnivesFirebase(): Promise<Knife[]> {
       result.push({ ...(d.data() as Knife), id: d.id });
     });
     return result;
-  } catch (err) {
-    console.error('[Firebase] Erro ao buscar facas do Firestore:', err);
-    throw err;
+  } catch (err: any) {
+    if (err?.code === 'resource-exhausted' || err?.message?.includes('Quota')) {
+      console.warn('[Firebase] Cota diária de leitura atingida (aguardando ciclo de renovação).');
+    } else {
+      console.warn('[Firebase] Aviso ao buscar facas do Firestore:', err?.message || err);
+    }
+    return [];
   }
 }
 
@@ -169,7 +230,7 @@ export async function saveConfigFirebase(config: StoreConfig): Promise<void> {
     await setDoc(configDocRef, config, { merge: true });
     console.log('[Firebase] ✓ Configurações salvas no Firestore central.');
   } catch (err) {
-    console.error('[Firebase] Erro ao salvar configurações no Firestore:', err);
+    console.warn('[Firebase] Erro ao salvar configurações no Firestore:', err);
   }
 }
 
@@ -184,9 +245,204 @@ export async function fetchConfigFirebase(): Promise<StoreConfig | null> {
       return snap.data() as StoreConfig;
     }
   } catch (err) {
-    console.error('[Firebase] Erro ao buscar configurações do Firestore:', err);
+    console.warn('[Firebase] Erro ao buscar configurações do Firestore:', err);
   }
   return null;
+}
+
+/**
+ * Save customer to Firestore.
+ */
+export async function saveCustomerFirebase(customer: any): Promise<void> {
+  if (!customer || !customer.id) return;
+  try {
+    const customerDocRef = doc(db, CUSTOMERS_COLLECTION, customer.id);
+    const clean: Record<string, any> = {};
+    for (const [k, v] of Object.entries(customer)) {
+      if (v !== undefined) clean[k] = v;
+    }
+    clean.updatedAt = new Date().toISOString();
+    await setDoc(customerDocRef, clean, { merge: true });
+  } catch (err) {
+    console.warn('[Firebase] Erro ao salvar cliente no Firestore:', err);
+  }
+}
+
+/**
+ * Delete customer from Firestore.
+ */
+export async function deleteCustomerFirebase(id: string): Promise<void> {
+  if (!id) return;
+  try {
+    const customerDocRef = doc(db, CUSTOMERS_COLLECTION, id);
+    await deleteDoc(customerDocRef);
+  } catch (err) {
+    console.warn('[Firebase] Erro ao excluir cliente no Firestore:', err);
+  }
+}
+
+/**
+ * Fetch customers from Firestore.
+ */
+export async function fetchCustomersFirebase(): Promise<any[]> {
+  try {
+    const col = collection(db, CUSTOMERS_COLLECTION);
+    const snap = await getDocs(col);
+    const result: any[] = [];
+    snap.forEach((d) => {
+      result.push({ ...d.data(), id: d.id });
+    });
+    return result;
+  } catch (err) {
+    console.warn('[Firebase] Erro ao buscar clientes do Firestore:', err);
+    return [];
+  }
+}
+
+/**
+ * Save sale to Firestore.
+ */
+export async function saveSaleFirebase(sale: any): Promise<void> {
+  if (!sale || !sale.id) return;
+  try {
+    const saleDocRef = doc(db, SALES_COLLECTION, sale.id);
+    const clean: Record<string, any> = {};
+    for (const [k, v] of Object.entries(sale)) {
+      if (v !== undefined) clean[k] = v;
+    }
+    await setDoc(saleDocRef, clean, { merge: true });
+  } catch (err) {
+    console.warn('[Firebase] Erro ao salvar venda no Firestore:', err);
+  }
+}
+
+/**
+ * Delete sale from Firestore.
+ */
+export async function deleteSaleFirebase(id: string): Promise<void> {
+  if (!id) return;
+  try {
+    const saleDocRef = doc(db, SALES_COLLECTION, id);
+    await deleteDoc(saleDocRef);
+  } catch (err) {
+    console.warn('[Firebase] Erro ao excluir venda no Firestore:', err);
+  }
+}
+
+/**
+ * Fetch sales from Firestore.
+ */
+export async function fetchSalesFirebase(): Promise<any[]> {
+  try {
+    const col = collection(db, SALES_COLLECTION);
+    const snap = await getDocs(col);
+    const result: any[] = [];
+    snap.forEach((d) => {
+      result.push({ ...d.data(), id: d.id });
+    });
+    result.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return result;
+  } catch (err) {
+    console.warn('[Firebase] Erro ao buscar vendas do Firestore:', err);
+    return [];
+  }
+}
+
+let hasCheckedLocalMigration = false;
+
+/**
+ * Automatic safe migration of any real local products from notebook to Firestore.
+ * Preserves existing products and pushes them to the central cloud.
+ */
+export async function safeMigrateLocalDataToFirestore(): Promise<void> {
+  if (typeof window === 'undefined' || hasCheckedLocalMigration) return;
+  hasCheckedLocalMigration = true;
+
+  try {
+    // 1. Check local storage / IndexedDB for user-created knives
+    let localKnives: Knife[] = [];
+
+    // Try IndexedDB
+    try {
+      const { idbGetKnives } = await import('./indexedDbStorage');
+      const idbList = await idbGetKnives();
+      if (Array.isArray(idbList) && idbList.length > 0) {
+        localKnives = idbList;
+      }
+    } catch (_) {}
+
+    // Try legacy localStorage keys if IndexedDB was empty
+    if (localKnives.length === 0) {
+      const keysToTest = [
+        'cutelaria_knives_v1',
+        'cutelaria_catalog_v1',
+        'knives',
+        'cutelaria_knives',
+        'saved_knives',
+        'catalog',
+        'cutelaria_products',
+        'products'
+      ];
+      for (const k of keysToTest) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              localKnives = parsed;
+              break;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    const realLocalKnives = localKnives.filter((k) => k && (k.name || k.code));
+
+    if (realLocalKnives.length > 0) {
+      console.log(`[Firebase Migration] 🚀 Detectadas ${realLocalKnives.length} facas locais no notebook. Sincronizando com o Firestore universal...`);
+      for (const knife of realLocalKnives) {
+        try {
+          await saveKnifeFirebase(knife);
+        } catch (e) {
+          console.warn('[Firebase Migration] Falha ao sincronizar faca:', knife.name, e);
+        }
+      }
+      console.log(`[Firebase Migration] ✓ Migração de facas concluída.`);
+    }
+
+    // 2. Migrate local customers
+    try {
+      const rawCust = localStorage.getItem('cutelaria_customers_v1');
+      if (rawCust) {
+        const customers = JSON.parse(rawCust);
+        if (Array.isArray(customers) && customers.length > 0) {
+          for (const c of customers) {
+            if (c && c.id && c.name) {
+              await saveCustomerFirebase(c);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 3. Migrate local sales
+    try {
+      const rawSales = localStorage.getItem('cutelaria_sales_log_v1');
+      if (rawSales) {
+        const sales = JSON.parse(rawSales);
+        if (Array.isArray(sales) && sales.length > 0) {
+          for (const s of sales) {
+            if (s && s.id && !s.id.startsWith('synth-')) {
+              await saveSaleFirebase(s);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  } catch (err) {
+    console.warn('[Firebase Migration] Erro durante checagem de migração:', err);
+  }
 }
 
 /**

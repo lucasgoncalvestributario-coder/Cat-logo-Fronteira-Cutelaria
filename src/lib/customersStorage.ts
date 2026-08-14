@@ -148,6 +148,12 @@ export async function incrementCustomerPurchasesAPI(id: string): Promise<Custome
   current[idx] = updatedCustomer;
   saveCustomersToStorage(current);
 
+  // Firestore sync
+  try {
+    const docRef = doc(db, CUSTOMERS_COLLECTION, id);
+    setDoc(docRef, updatedCustomer, { merge: true }).catch(() => {});
+  } catch (_) {}
+
   try {
     await fetch(`/api/customers/${id}/purchase`, {
       method: 'POST',
@@ -176,6 +182,12 @@ export async function claimCustomerRewardAPI(id: string): Promise<Customer | nul
 
   current[idx] = updatedCustomer;
   saveCustomersToStorage(current);
+
+  // Firestore sync
+  try {
+    const docRef = doc(db, CUSTOMERS_COLLECTION, id);
+    setDoc(docRef, updatedCustomer, { merge: true }).catch(() => {});
+  } catch (_) {}
 
   try {
     await fetch(`/api/customers/${id}/claim-reward`, {

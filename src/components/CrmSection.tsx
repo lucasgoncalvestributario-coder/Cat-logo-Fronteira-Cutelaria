@@ -32,6 +32,7 @@ import {
 import {
   Customer,
   getStoredCustomers,
+  fetchCustomersAPI,
   saveCustomerAPI,
   deleteCustomerAPI,
   incrementCustomerPurchasesAPI,
@@ -41,6 +42,7 @@ import {
   getCustomerLastPurchaseInfo
 } from '../lib/customersStorage';
 import { getStoredSalesLog, SaleRecord, PaymentMethod } from '../lib/salesStorage';
+import { subscribeToCustomersFirebase } from '../lib/firebase';
 
 interface CrmSectionProps {
   knives?: {
@@ -113,9 +115,22 @@ export function CrmSection({
     purchasesCount: 0
   });
 
-  // Load customers & sales
+  // Load customers & sales + Live Firebase sync
   useEffect(() => {
     loadData();
+
+    let unsub: (() => void) | null = null;
+    try {
+      unsub = subscribeToCustomersFirebase((liveCustomers) => {
+        if (Array.isArray(liveCustomers) && liveCustomers.length > 0) {
+          setCustomers(liveCustomers);
+        }
+      });
+    } catch (_) {}
+
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
   const loadData = () => {
