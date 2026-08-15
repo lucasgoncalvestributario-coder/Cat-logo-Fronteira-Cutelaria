@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { ActiveTab, Knife, FilterState, StoreConfig } from './types';
 import {
-  fetchKnives,
   saveKnifeToApi,
   deleteKnifeFromApi,
   importCatalogToApi,
@@ -25,8 +24,6 @@ import { KnifeDetailModal } from './components/KnifeDetailModal';
 import { CustomKnifeConfigurator } from './components/CustomKnifeConfigurator';
 import { AdminPanelModal } from './components/AdminPanelModal';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
-
-import { SplashScreen } from './components/SplashScreen';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog');
@@ -64,12 +61,11 @@ export default function App() {
     };
   });
 
-  // Data Loaded Indicator for Splash and Instant Hydration
+  // Data Loaded Indicator for Instant Hydration
   const [isFirestoreSynced, setIsFirestoreSynced] = useState<boolean>(false);
   const [isInitialLoadDone, setIsInitialLoadDone] = useState<boolean>(() => {
     return knives.length > 0;
   });
-  const [isSplashActive, setIsSplashActive] = useState<boolean>(true);
 
   // Filter & Search State (Default category: 'TODAS')
   const [filter, setFilter] = useState<FilterState>({
@@ -97,42 +93,24 @@ export default function App() {
     return isStandaloneMatch || isIOSStandalone || isAndroidApp;
   });
 
-  const loadData = useCallback(async () => {
-    try {
-      const loadedKnives = await fetchKnives(true);
-      if (Array.isArray(loadedKnives)) {
-        setKnives(loadedKnives);
-      }
-    } catch (_) {}
-
-    try {
-      const loadedConfig = await fetchStoreConfig();
-      if (loadedConfig) {
-        setConfig(loadedConfig);
-      }
-    } catch (_) {}
-  }, []);
-
   // Initial Data Load, Firebase Real-Time Firestore Sync & Safe Migration (Mount Once)
   useEffect(() => {
-    // 0. Fallback check for IndexedDB if localStorage cache was empty
-    (async () => {
-      try {
-        const { idbGetKnives } = await import('./lib/indexedDbStorage');
-        const local = await idbGetKnives();
-        if (Array.isArray(local) && local.length > 0) {
-          setKnives((prev) => (prev.length === 0 ? local : prev));
-          setIsInitialLoadDone(true);
-        }
-      } catch (_) {}
-    })();
+    // 1. IndexedDB fallback only if localStorage was completely empty
+    if (knives.length === 0) {
+      (async () => {
+        try {
+          const { idbGetKnives } = await import('./lib/indexedDbStorage');
+          const local = await idbGetKnives();
+          if (Array.isArray(local) && local.length > 0) {
+            setKnives((prev) => (prev.length === 0 ? local : prev));
+            setIsInitialLoadDone(true);
+          }
+        } catch (_) {}
+      })();
+    }
 
-    // 1. Safe background migration: check if any real user knives exist locally on this device/notebook and sync to Firestore
-    safeMigrateLocalDataToFirestore().catch(() => {});
-
-    // 2. PRIMARY: Real-time synchronization via Firebase Firestore onSnapshot
+    // 2. PRIMARY: Real-time synchronization via single Firebase Firestore onSnapshot listener
     // Instantaneous universal broadcast across all devices, browsers and clients worldwide
-    // onSnapshot delivers the initial dataset immediately on registration without needing a redundant getDocs query.
     let unsubKnives: (() => void) | null = null;
     let unsubConfig: (() => void) | null = null;
 
@@ -154,13 +132,17 @@ export default function App() {
       console.warn('[Firebase] Erro ao conectar listener:', fbErr);
     }
 
-    // Safety fallback (6s) so loading screen never hangs if client has no internet connection
+    // 3. Defer background migration to run after initial render is complete
+    const migrationTimer = setTimeout(() => {
+      safeMigrateLocalDataToFirestore().catch(() => {});
+    }, 2000);
+
+    // 4. Safety fallback so skeleton never hangs if client is completely offline
     const safetyTimer = setTimeout(() => {
       setIsInitialLoadDone(true);
-      setIsFirestoreSynced(true);
-    }, 6000);
+    }, 2500);
 
-    // 4. SECONDARY: Server-Sent Events (SSE) fallback for local dev / express proxy
+    // 5. SECONDARY: Server-Sent Events (SSE) fallback for local dev / express proxy
     let eventSource: EventSource | null = null;
     try {
       eventSource = new EventSource('/api/events');
@@ -177,14 +159,12 @@ export default function App() {
       eventSource.onerror = () => {};
     } catch (_) {}
 
-    // 5. Register Service Worker
+    // 6. Register Service Worker
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch((err) => {
-        console.warn('SW registration failed:', err);
-      });
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
 
-    // Check standalone mode again in case display mode changes
+    // Check standalone mode
     const checkStandalone = () => {
       const isStandaloneMatch = window.matchMedia('(display-mode: standalone)').matches;
       const isIOSStandalone = (window.navigator as any).standalone === true;
@@ -213,10 +193,11 @@ export default function App() {
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
-      clearTimeout(safetyTimer);
       if (unsubKnives) unsubKnives();
       if (unsubConfig) unsubConfig();
       if (eventSource) eventSource.close();
+      clearTimeout(migrationTimer);
+      clearTimeout(safetyTimer);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
@@ -308,7 +289,6 @@ export default function App() {
   const handleImportCatalog = async (catalog: Knife[]) => {
     setKnives(catalog);
     const success = await importCatalogToApi(catalog);
-    await loadData();
     return success;
   };
 
@@ -325,15 +305,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative bg-black text-zinc-100 flex flex-col font-sans pb-24 sm:pb-12">
-      {/* Premium Minimalist Blade Loading Screen strictly synchronized with all database knives (12-second sequence) */}
-      {isSplashActive && (
-        <SplashScreen
-          knives={knives}
-          isFullySynced={isFirestoreSynced}
-          onFinished={() => setIsSplashActive(false)}
-        />
-      )}
-
       {/* Animated Forge Ember & Particles Background */}
       <EmberBackground />
 
@@ -374,12 +345,19 @@ export default function App() {
               /* Loading Skeleton Grid while initial data is arriving */
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 my-2 sm:my-4">
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                  <div key={n} className="rounded-2xl bg-[#0e0f14] border border-white/5 overflow-hidden animate-pulse">
-                    <div className="aspect-[4/3] bg-[#161822]" />
-                    <div className="p-3 space-y-2">
-                      <div className="h-4 bg-zinc-800 rounded w-3/4" />
-                      <div className="h-3 bg-zinc-800/60 rounded w-1/2" />
-                      <div className="h-5 bg-amber-950/40 rounded w-2/3 pt-1" />
+                  <div key={n} className="rounded-xl sm:rounded-2xl bg-[#12141d] border border-white/5 overflow-hidden flex flex-col animate-pulse">
+                    <div className="aspect-[4/3] bg-[#171923] relative">
+                      <div className="absolute top-2 left-2 w-14 h-4 bg-zinc-800/80 rounded-md" />
+                    </div>
+                    <div className="p-3 sm:p-4 space-y-2.5 flex-1 flex flex-col justify-between">
+                      <div className="space-y-1.5">
+                        <div className="h-3.5 bg-zinc-800 rounded w-4/5" />
+                        <div className="h-2.5 bg-zinc-800/50 rounded w-1/2" />
+                      </div>
+                      <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                        <div className="h-4 bg-amber-500/20 rounded w-20" />
+                        <div className="h-7 w-16 bg-[#ff6b00]/20 rounded-lg" />
+                      </div>
                     </div>
                   </div>
                 ))}

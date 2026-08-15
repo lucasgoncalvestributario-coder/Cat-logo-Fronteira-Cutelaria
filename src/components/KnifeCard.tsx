@@ -15,7 +15,9 @@ export interface KnifeCardProps {
 }
 
 export function KnifeCard({ knife, index = 0, onClickCard }: KnifeCardProps) {
-  const [isImageLoaded, setIsImageLoaded] = useState(false);
+  const mainImage = knife.images && knife.images.length > 0 ? knife.images[0] : '';
+  const [isImageLoaded, setIsImageLoaded] = useState<boolean>(false);
+
   const isSoldOut = knife.isOutofStock || knife.status === 'esgotado' || (typeof knife.quantity === 'number' && knife.quantity <= 0);
   const isExclusive = Boolean(
     knife.isFeatured ||
@@ -25,9 +27,9 @@ export function KnifeCard({ knife, index = 0, onClickCard }: KnifeCardProps) {
   const isLastUnit = !isSoldOut && typeof knife.quantity === 'number' && knife.quantity === 1;
   const isOnSale = Boolean(knife.isOnSale && knife.originalPrice && Number(knife.originalPrice) > Number(knife.price));
 
-  const mainImage = knife.images && knife.images.length > 0 ? knife.images[0] : '';
+  // Only top 4 cards (above the fold) load eagerly; all others lazy-load as the user scrolls
   const isTopPriority = index < 4;
-  const staggerDelay = typeof index === 'number' ? Math.min((index % 5) * 0.04, 0.2) : 0;
+  const staggerDelay = typeof index === 'number' ? Math.min((index % 6) * 0.02, 0.1) : 0;
 
   return (
     <motion.div
@@ -118,7 +120,7 @@ export function KnifeCard({ knife, index = 0, onClickCard }: KnifeCardProps) {
             fetchPriority={isTopPriority ? 'high' : 'auto'}
             referrerPolicy="no-referrer"
             onLoad={() => setIsImageLoaded(true)}
-            className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${
+            className={`w-full h-full object-cover transition-opacity duration-300 group-hover:scale-105 ${
               !isImageLoaded ? 'opacity-0' : isSoldOut ? 'opacity-75 blur-[2.5px] grayscale contrast-110' : 'opacity-95'
             }`}
           />
