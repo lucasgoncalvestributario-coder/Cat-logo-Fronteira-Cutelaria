@@ -30,12 +30,38 @@ import { SplashScreen } from './components/SplashScreen';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog');
-  const [knives, setKnives] = useState<Knife[]>([]);
-  const [config, setConfig] = useState<StoreConfig>({
-    whatsappNumber: '554792787901',
-    storeName: 'FRONTEIRA CUTELARIA',
-    adminPin: '251127',
-    welcomeMessage: 'Olá! Gostaria de mais informações sobre o catálogo da Fronteira Cutelaria.',
+  
+  // Instant synchronous state hydration from local cache (0ms render time)
+  const [knives, setKnives] = useState<Knife[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('cutelaria_knives_cache_v2');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch (_) {}
+    }
+    return [];
+  });
+
+  const [config, setConfig] = useState<StoreConfig>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('cutelaria_config_v1');
+        if (cached) {
+          return JSON.parse(cached);
+        }
+      } catch (_) {}
+    }
+    return {
+      whatsappNumber: '554792787901',
+      storeName: 'FRONTEIRA CUTELARIA',
+      adminPin: '251127',
+      welcomeMessage: 'Olá! Gostaria de mais informações sobre o catálogo da Fronteira Cutelaria.',
+    };
   });
 
   // Filter & Search State (Default category: 'TODAS')
@@ -82,8 +108,7 @@ export default function App() {
 
   // Initial Data Load, Firebase Real-Time Firestore Sync & Safe Migration (Mount Once)
   useEffect(() => {
-    // 0. Immediate fetch from Firestore and local hydration
-    loadData();
+    // 0. Fallback check for IndexedDB if localStorage cache was empty
     (async () => {
       try {
         const { idbGetKnives } = await import('./lib/indexedDbStorage');
@@ -99,7 +124,7 @@ export default function App() {
 
     // 2. PRIMARY: Real-time synchronization via Firebase Firestore onSnapshot
     // Instantaneous universal broadcast across all devices, browsers and clients worldwide
-    // Note: onSnapshot automatically provides the initial documents immediately upon registration without extra getDocs!
+    // onSnapshot delivers the initial dataset immediately on registration without needing a redundant getDocs query.
     let unsubKnives: (() => void) | null = null;
     let unsubConfig: (() => void) | null = null;
 

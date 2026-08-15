@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Sparkles, Flame, Eye, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Knife } from '../types';
@@ -15,6 +15,7 @@ export interface KnifeCardProps {
 }
 
 export function KnifeCard({ knife, index = 0, onClickCard }: KnifeCardProps) {
+  const [isImageLoaded, setIsImageLoaded] = useState(false);
   const isSoldOut = knife.isOutofStock || knife.status === 'esgotado' || (typeof knife.quantity === 'number' && knife.quantity <= 0);
   const isExclusive = Boolean(
     knife.isFeatured ||
@@ -25,15 +26,15 @@ export function KnifeCard({ knife, index = 0, onClickCard }: KnifeCardProps) {
   const isOnSale = Boolean(knife.isOnSale && knife.originalPrice && Number(knife.originalPrice) > Number(knife.price));
 
   const mainImage = knife.images && knife.images.length > 0 ? knife.images[0] : '';
-  const staggerDelay = typeof index === 'number' ? Math.min((index % 5) * 0.06, 0.3) : 0;
+  const isTopPriority = index < 4;
+  const staggerDelay = typeof index === 'number' ? Math.min((index % 5) * 0.04, 0.2) : 0;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 28, scale: 0.98 }}
-      whileInView={{ opacity: 1, y: 0, scale: 1 }}
-      viewport={{ once: true, margin: '-30px' }}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{
-        duration: 0.55,
+        duration: 0.35,
         ease: [0.22, 1, 0.36, 1],
         delay: staggerDelay,
       }}
@@ -57,7 +58,7 @@ export function KnifeCard({ knife, index = 0, onClickCard }: KnifeCardProps) {
               x: '180%',
               opacity: isExclusive ? [0, 0.9, 0.9, 0] : [0, 0.6, 0.6, 0],
             }}
-            viewport={{ once: false, amount: 0.3 }}
+            viewport={{ once: true, amount: 0.2 }}
             transition={{
               duration: isExclusive ? 1.35 : 1.15,
               ease: [0.25, 0.1, 0.25, 1],
@@ -78,7 +79,7 @@ export function KnifeCard({ knife, index = 0, onClickCard }: KnifeCardProps) {
                 x: '200%',
                 opacity: [0, 1, 0],
               }}
-              viewport={{ once: false, amount: 0.3 }}
+              viewport={{ once: true, amount: 0.2 }}
               transition={{
                 duration: 1.1,
                 ease: [0.22, 1, 0.36, 1],
@@ -97,13 +98,28 @@ export function KnifeCard({ knife, index = 0, onClickCard }: KnifeCardProps) {
 
       {/* Knife Photo Header */}
       <div className="relative aspect-[4/3] sm:aspect-4/3 w-full bg-[#0a0b0e] overflow-hidden flex items-center justify-center">
+        {/* Shimmer Placeholder Skeleton until image is loaded */}
+        {mainImage && !isImageLoaded && (
+          <div className="absolute inset-0 bg-[#0d0e14] flex items-center justify-center overflow-hidden">
+            <div className="w-full h-full animate-pulse bg-gradient-to-r from-[#0d0e14] via-[#161824] to-[#0d0e14]" />
+            <div className="absolute inset-0 flex items-center justify-center opacity-25">
+              <span className="font-serif-luxury text-[10px] tracking-widest text-amber-500 uppercase">Fronteira</span>
+            </div>
+          </div>
+        )}
+
         {mainImage ? (
           <img
             src={mainImage}
             alt={knife.name}
+            loading={isTopPriority ? 'eager' : 'lazy'}
+            decoding="async"
+            // @ts-ignore
+            fetchPriority={isTopPriority ? 'high' : 'auto'}
             referrerPolicy="no-referrer"
-            className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${
-              isSoldOut ? 'opacity-75 blur-[2.5px] grayscale contrast-110' : 'opacity-95'
+            onLoad={() => setIsImageLoaded(true)}
+            className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${
+              !isImageLoaded ? 'opacity-0' : isSoldOut ? 'opacity-75 blur-[2.5px] grayscale contrast-110' : 'opacity-95'
             }`}
           />
         ) : (

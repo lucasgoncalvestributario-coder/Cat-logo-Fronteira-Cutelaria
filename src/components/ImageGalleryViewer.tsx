@@ -148,6 +148,7 @@ export function ImageGalleryViewer({ images, initialIndex = 0, isOpen, onClose, 
           src={currentImage}
           alt={`Visualização ${currentIndex + 1}`}
           referrerPolicy="no-referrer"
+          decoding="async"
           className="max-h-[68vh] sm:max-h-[75vh] max-w-full object-contain transition-transform duration-200 ease-out rounded-lg shadow-2xl"
           style={{
             transform: `scale(${zoomLevel}) translate(${position.x / zoomLevel}px, ${position.y / zoomLevel}px)`,

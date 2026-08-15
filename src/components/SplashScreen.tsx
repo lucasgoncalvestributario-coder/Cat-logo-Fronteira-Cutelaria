@@ -5,14 +5,32 @@ interface SplashScreenProps {
   durationMs?: number;
 }
 
-export function SplashScreen({ onFinished, durationMs = 1800 }: SplashScreenProps) {
-  const [isVisible, setIsVisible] = useState(true);
+export function SplashScreen({ onFinished, durationMs = 1000 }: SplashScreenProps) {
+  const [isVisible, setIsVisible] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return !sessionStorage.getItem('cutelaria_splash_seen_v2');
+      } catch (_) {
+        return true;
+      }
+    }
+    return true;
+  });
   const [isFadingOut, setIsFadingOut] = useState(false);
 
   useEffect(() => {
+    if (!isVisible) {
+      if (onFinished) onFinished();
+      return;
+    }
+
+    try {
+      sessionStorage.setItem('cutelaria_splash_seen_v2', 'true');
+    } catch (_) {}
+
     const fadeTimer = setTimeout(() => {
       setIsFadingOut(true);
-    }, durationMs - 500);
+    }, Math.max(durationMs - 350, 400));
 
     const finishTimer = setTimeout(() => {
       setIsVisible(false);
@@ -23,7 +41,7 @@ export function SplashScreen({ onFinished, durationMs = 1800 }: SplashScreenProp
       clearTimeout(fadeTimer);
       clearTimeout(finishTimer);
     };
-  }, [durationMs, onFinished]);
+  }, [durationMs, isVisible, onFinished]);
 
   if (!isVisible) return null;
 

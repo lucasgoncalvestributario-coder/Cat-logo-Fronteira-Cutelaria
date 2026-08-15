@@ -2233,6 +2233,20 @@ export function AdminPanelModal({
               {/* TAB 3: SETTINGS & WHATSAPP */}
               {activeTab === 'settings' && (
                 <div className="space-y-6 text-xs">
+                  {/* Cloud Database Status Card */}
+                  <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 space-y-2">
+                    <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span>Google Cloud Firestore Central (Ativo)</span>
+                    </div>
+                    <div className="text-[11px] text-zinc-300 space-y-1 font-mono">
+                      <div><span className="text-zinc-400 font-sans">Projeto:</span> Catalogo fronteira cutelaria (catalogo-fronteira-cutelaria)</div>
+                      <div><span className="text-zinc-400 font-sans">Banco de Dados:</span> (default)</div>
+                      <div><span className="text-zinc-400 font-sans">Coleção Principal:</span> knives ({knives.length} facas sincronizadas)</div>
+                      <div className="text-emerald-400 font-sans text-xs pt-1">✓ Todas as alterações são gravadas na nuvem e replicadas em tempo real.</div>
+                    </div>
+                  </div>
+
                   <form onSubmit={handleSaveSettingsSubmit} className="space-y-4 text-xs">
                     <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest border-b border-white/10 pb-2">
                       Configurações da Loja

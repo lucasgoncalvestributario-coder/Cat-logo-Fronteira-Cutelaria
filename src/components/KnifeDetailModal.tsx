@@ -145,6 +145,7 @@ export function KnifeDetailModal({
                     exit="exit"
                     transition={{ x: { type: 'spring', stiffness: 300, damping: 30 }, opacity: { duration: 0.2 } }}
                     referrerPolicy="no-referrer"
+                    decoding="async"
                     onClick={() => setIsGalleryOpen(true)}
                     className={`w-full h-full object-cover object-center cursor-pointer ${
                       isSoldOut ? 'opacity-75 blur-[2.5px] grayscale contrast-110' : 'opacity-95'
@@ -239,7 +240,14 @@ export function KnifeDetailModal({
                         selectedImageIndex === idx ? 'border-[#ff6b00] scale-102 shadow-md shadow-[#ff6b00]/30' : 'border-white/10 opacity-60 hover:opacity-100'
                       }`}
                     >
-                      <img src={img} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      <img
+                        src={img}
+                        alt={`Foto ${idx + 1}`}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
                     </button>
                   ))}
                 </div>

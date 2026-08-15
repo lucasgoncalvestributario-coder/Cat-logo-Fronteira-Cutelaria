@@ -17,24 +17,25 @@ import { Knife, StoreConfig } from '../types';
 import firebaseConfigJson from '../../firebase-applet-config.json';
 
 export const firebaseConfig = {
-  projectId: firebaseConfigJson.projectId || (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-0135363209",
-  appId: firebaseConfigJson.appId || (import.meta as any).env?.VITE_FIREBASE_APP_ID || "1:141072856887:web:3a4550b04d4ca4824e4cb2",
-  apiKey: firebaseConfigJson.apiKey || (import.meta as any).env?.VITE_FIREBASE_API_KEY || "AIzaSyBULwAyVqjGDoTyY9prVqa-VUQWcaZQEHc",
-  authDomain: firebaseConfigJson.authDomain || (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || "gen-lang-client-0135363209.firebaseapp.com",
-  firestoreDatabaseId: firebaseConfigJson.firestoreDatabaseId || (import.meta as any).env?.VITE_FIREBASE_DATABASE_ID || "ai-studio-cutelariaartesan-d1fa4ca2-bee4-4acf-9272-96423c649f61",
-  storageBucket: firebaseConfigJson.storageBucket || (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || "gen-lang-client-0135363209.firebasestorage.app",
-  messagingSenderId: firebaseConfigJson.messagingSenderId || (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || "141072856887",
+  projectId: firebaseConfigJson.projectId || (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || "catalogo-fronteira-cutelaria",
+  appId: firebaseConfigJson.appId || (import.meta as any).env?.VITE_FIREBASE_APP_ID || "1:97657827199:web:e2ef9b1c49dc7658fc344a",
+  apiKey: firebaseConfigJson.apiKey || (import.meta as any).env?.VITE_FIREBASE_API_KEY || "AIzaSyAgXrq4G1pcuTgVTJqRvOmyN3yNHg-hlR4",
+  authDomain: firebaseConfigJson.authDomain || (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || "catalogo-fronteira-cutelaria.firebaseapp.com",
+  firestoreDatabaseId: firebaseConfigJson.firestoreDatabaseId || (import.meta as any).env?.VITE_FIREBASE_DATABASE_ID || "(default)",
+  storageBucket: firebaseConfigJson.storageBucket || (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || "catalogo-fronteira-cutelaria.firebasestorage.app",
+  messagingSenderId: firebaseConfigJson.messagingSenderId || (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || "97657827199",
 };
 
 // Initialize Firebase App
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Firestore with custom Database ID
-export const db = firebaseConfig.firestoreDatabaseId
+// Initialize Firestore: Use default database as primary for 100% compatibility with Firebase Console and Blaze, or custom database if specified
+export const db = getFirestore(app);
+export const customDb = firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
   ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+  : null;
 
-console.log(`[Firebase] 🔥 Firestore conectado ao projeto "${firebaseConfig.projectId}" (Banco: "${firebaseConfig.firestoreDatabaseId || 'default'}")`);
+console.log(`[Firebase] 🔥 Firestore conectado ao projeto "${firebaseConfig.projectId}" (Banco principal: (default))`);
 
 const KNIVES_COLLECTION = 'knives';
 const CONFIG_COLLECTION = 'config';
@@ -67,11 +68,35 @@ export function subscribeToKnivesFirebase(
       });
 
       console.log(`[Firebase] ⚡ ${knivesList.length} facas sincronizadas em tempo real via Firestore.`);
-      onUpdate(knivesList);
-      try {
-        const { idbSaveKnives } = await import('./indexedDbStorage');
-        await idbSaveKnives(knivesList);
-      } catch (_) {}
+      if (knivesList.length > 0) {
+        onUpdate(knivesList);
+        try {
+          localStorage.setItem('cutelaria_knives_cache_v2', JSON.stringify(knivesList));
+        } catch (_) {}
+        try {
+          const { idbSaveKnives } = await import('./indexedDbStorage');
+          await idbSaveKnives(knivesList);
+        } catch (_) {}
+      } else {
+        // If Firestore is empty (0 docs), check if this client has local knives to migrate to the cloud
+        try {
+          const { idbGetKnives } = await import('./indexedDbStorage');
+          const localKnives = await idbGetKnives();
+          if (Array.isArray(localKnives) && localKnives.length > 0) {
+            console.log(`[Firebase] 📦 Detectadas ${localKnives.length} facas locais no dispositivo. Enviando para o Firestore central...`);
+            onUpdate(localKnives);
+            for (const k of localKnives) {
+              if (k && (k.name || k.code)) {
+                await saveKnifeFirebase(k).catch(() => {});
+              }
+            }
+          } else {
+            onUpdate([]);
+          }
+        } catch (_) {
+          onUpdate([]);
+        }
+      }
     },
     (error) => {
       console.warn('[Firebase] Aviso no listener em tempo real do Firestore:', error);
@@ -93,6 +118,9 @@ export function subscribeToConfigFirebase(
       if (docSnap.exists()) {
         const data = docSnap.data() as StoreConfig;
         console.log('[Firebase] ⚡ Configurações da loja atualizadas em tempo real:', data);
+        try {
+          localStorage.setItem('cutelaria_config_v1', JSON.stringify(data));
+        } catch (_) {}
         onUpdate(data);
       }
     },
@@ -175,6 +203,10 @@ export async function saveKnifeFirebase(knife: Knife): Promise<void> {
 
   try {
     await setDoc(knifeDocRef, cleanData, { merge: true });
+    if (customDb) {
+      const customKnifeDocRef = doc(customDb, KNIVES_COLLECTION, knifeId);
+      setDoc(customKnifeDocRef, cleanData, { merge: true }).catch(() => {});
+    }
     console.log(`[Firebase] ✓ Faca "${knife.name}" gravada com sucesso no Firestore universal.`);
   } catch (err: any) {
     console.error(`[Firebase] ❌ Falha crítica ao gravar no Firestore:`, err);
@@ -192,6 +224,10 @@ export async function deleteKnifeFirebase(id: string): Promise<void> {
   const knifeDocRef = doc(db, KNIVES_COLLECTION, targetId);
   try {
     await deleteDoc(knifeDocRef);
+    if (customDb) {
+      const customKnifeDocRef = doc(customDb, KNIVES_COLLECTION, targetId);
+      deleteDoc(customKnifeDocRef).catch(() => {});
+    }
     console.log(`[Firebase] ✓ Faca removida com sucesso do Firestore universal.`);
   } catch (err: any) {
     console.error(`[Firebase] ❌ Falha ao excluir no Firestore:`, err);
@@ -359,6 +395,12 @@ export async function safeMigrateLocalDataToFirestore(): Promise<void> {
   hasCheckedLocalMigration = true;
 
   try {
+    if (localStorage.getItem('cutelaria_migration_completed_v2')) {
+      return;
+    }
+  } catch (_) {}
+
+  try {
     // 1. Check local storage / IndexedDB for user-created knives
     let localKnives: Knife[] = [];
 
@@ -439,6 +481,10 @@ export async function safeMigrateLocalDataToFirestore(): Promise<void> {
           }
         }
       }
+    } catch (_) {}
+
+    try {
+      localStorage.setItem('cutelaria_migration_completed_v2', 'true');
     } catch (_) {}
   } catch (err) {
     console.warn('[Firebase Migration] Erro durante checagem de migração:', err);

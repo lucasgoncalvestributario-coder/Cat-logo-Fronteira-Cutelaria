@@ -26,7 +26,7 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 export async function idbSaveKnives(knives: Knife[]): Promise<void> {
-  if (!Array.isArray(knives)) {
+  if (!Array.isArray(knives) || knives.length === 0) {
     return;
   }
   try {
@@ -34,7 +34,7 @@ export async function idbSaveKnives(knives: Knife[]): Promise<void> {
     const tx = db.transaction(STORE_KNIVES, 'readwrite');
     const store = tx.objectStore(STORE_KNIVES);
     
-    // Clear and re-populate with new list
+    // Clear and re-populate with new non-empty list
     await new Promise<void>((resolve, reject) => {
       const clearReq = store.clear();
       clearReq.onsuccess = () => resolve();
@@ -54,6 +54,19 @@ export async function idbSaveKnives(knives: Knife[]): Promise<void> {
   } catch (err) {
     console.warn('IndexedDB save knives error:', err);
   }
+}
+
+export async function idbClearKnives(): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_KNIVES, 'readwrite');
+    const store = tx.objectStore(STORE_KNIVES);
+    await new Promise<void>((resolve, reject) => {
+      const clearReq = store.clear();
+      clearReq.onsuccess = () => resolve();
+      clearReq.onerror = () => reject(clearReq.error);
+    });
+  } catch (_) {}
 }
 
 export async function idbGetKnives(): Promise<Knife[]> {
