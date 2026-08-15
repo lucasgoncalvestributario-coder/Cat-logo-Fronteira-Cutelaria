@@ -195,11 +195,18 @@ export const SearchAndFilter = memo(function SearchAndFilter({
         </div>
 
         <button
+          id="btn-ver-todas-categorias"
           onClick={() => setIsGridModalOpen(true)}
-          className="flex items-center gap-1 text-[11px] font-bold text-[#ff6b00] hover:text-[#ff8c00] bg-[#ff6b00]/10 hover:bg-[#ff6b00]/20 px-2.5 py-1 rounded-lg border border-[#ff6b00]/20 transition-all cursor-pointer"
+          className="relative group overflow-hidden flex items-center gap-1.5 text-[11px] sm:text-xs font-black uppercase tracking-wider text-black bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:from-yellow-300 hover:to-amber-400 px-3 sm:px-3.5 py-1.5 rounded-xl border border-yellow-200 shadow-[0_0_18px_rgba(245,158,11,0.65)] hover:shadow-[0_0_24px_rgba(245,158,11,0.9)] transition-all duration-200 cursor-pointer animate-pulse active:scale-95"
         >
-          <LayoutGrid className="w-3.5 h-3.5" />
-          <span>Ver Todas Categorias</span>
+          {/* Animated Light Sweep Effect */}
+          <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 pointer-events-none" />
+          
+          <LayoutGrid className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black fill-black/30 shrink-0" />
+          <span className="relative z-10 font-extrabold drop-shadow-[0_1px_1px_rgba(255,255,255,0.4)]">
+            Ver Todas Categorias
+          </span>
+          <span className="relative z-10 w-2 h-2 rounded-full bg-red-600 border border-white animate-ping ml-0.5" />
         </button>
       </div>
 
