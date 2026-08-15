@@ -3,7 +3,7 @@ import { Knife } from '../types';
 
 interface SplashScreenProps {
   knives: Knife[];
-  isInitialLoadDone: boolean;
+  isFullySynced: boolean;
   onFinished?: () => void;
   minDurationMs?: number;
   maxDurationMs?: number;
@@ -13,10 +13,10 @@ type LoadingStage = 'init' | 'products' | 'images' | 'organizing' | 'ready';
 
 export function SplashScreen({
   knives,
-  isInitialLoadDone,
+  isFullySynced,
   onFinished,
   minDurationMs = 800,
-  maxDurationMs = 3800,
+  maxDurationMs = 7000,
 }: SplashScreenProps) {
   const [isVisible, setIsVisible] = useState(true);
   const [isFadingOut, setIsFadingOut] = useState(false);
@@ -24,7 +24,7 @@ export function SplashScreen({
   const [progress, setProgress] = useState(15);
   const [statusText, setStatusText] = useState('Preparando o catálogo...');
 
-  // State pipeline management
+  // State pipeline management - strictly waits for full database sync
   useEffect(() => {
     let isCancelled = false;
 
@@ -34,45 +34,44 @@ export function SplashScreen({
       setStatusText('Preparando o catálogo...');
       setProgress(20);
 
-      // Step 2: Check if products are loaded or wait for them
-      if (!isInitialLoadDone) {
-        setStage('products');
-        setStatusText('Carregando produtos...');
-        setProgress(45);
-      }
+      // Step 2: Strictly wait until Firestore confirms ALL knives from the database are loaded
+      setStage('products');
+      setStatusText('Buscando todas as facas no banco de dados...');
+      setProgress(40);
 
-      // Wait until initial load is marked done (or timeout)
-      const waitForProducts = new Promise<void>((resolve) => {
-        if (isInitialLoadDone) return resolve();
+      // Wait until full synchronization is confirmed (or safety timeout)
+      await new Promise<void>((resolve) => {
+        if (isFullySynced) return resolve();
         const checkInterval = setInterval(() => {
-          if (isInitialLoadDone || isCancelled) {
+          if (isFullySynced || isCancelled) {
             clearInterval(checkInterval);
             resolve();
           }
-        }, 50);
+        }, 60);
       });
-
-      // Race with safety timeout
-      await Promise.race([
-        waitForProducts,
-        new Promise((r) => setTimeout(r, maxDurationMs - 1000)),
-      ]);
 
       if (isCancelled) return;
 
-      // Step 3: Preparing images (warm up the top 4 visible knife thumbnails)
+      // Update progress with live knife count
+      const totalCount = knives.length;
+      setStatusText(`Sincronizando ${totalCount > 0 ? totalCount : ''} produtos...`);
+      setProgress(60);
+
+      await new Promise((r) => setTimeout(r, 200));
+      if (isCancelled) return;
+
+      // Step 3: Preparing images (warm up the top 6 visible knife thumbnails)
       setStage('images');
       setStatusText('Preparando imagens...');
-      setProgress(75);
+      setProgress(80);
 
       if (knives && knives.length > 0) {
         const topImageUrls = knives
-          .slice(0, 4)
+          .slice(0, 6)
           .map((k) => k.images?.[0])
           .filter((url): url is string => Boolean(url));
 
         if (topImageUrls.length > 0) {
-          // Preload top images with a strict safety timeout so it never stalls on poor connection
           await Promise.race([
             Promise.allSettled(
               topImageUrls.map(
@@ -86,7 +85,7 @@ export function SplashScreen({
                   })
               )
             ),
-            new Promise((r) => setTimeout(r, 600)),
+            new Promise((r) => setTimeout(r, 700)),
           ]);
         }
       }
@@ -95,19 +94,19 @@ export function SplashScreen({
 
       // Step 4: Organizing catalog layout
       setStage('organizing');
-      setStatusText('Organizando catálogo...');
-      setProgress(92);
+      setStatusText(totalCount > 0 ? `Organizando ${totalCount} facas...` : 'Organizando catálogo...');
+      setProgress(95);
 
-      await new Promise((r) => setTimeout(r, 180));
+      await new Promise((r) => setTimeout(r, 220));
       if (isCancelled) return;
 
-      // Step 5: Catalog ready
+      // Step 5: Catalog fully ready with all knives
       setStage('ready');
-      setStatusText('Catálogo pronto.');
+      setStatusText(totalCount > 0 ? `Catálogo pronto (${totalCount} facas).` : 'Catálogo pronto.');
       setProgress(100);
 
       // Brief pause to let user see "Catálogo pronto." then smooth fade out
-      await new Promise((r) => setTimeout(r, 320));
+      await new Promise((r) => setTimeout(r, 380));
       if (isCancelled) return;
 
       setIsFadingOut(true);
@@ -137,7 +136,7 @@ export function SplashScreen({
       isCancelled = true;
       clearTimeout(absoluteSafety);
     };
-  }, [isInitialLoadDone, knives, maxDurationMs, onFinished]);
+  }, [isFullySynced, knives, maxDurationMs, onFinished]);
 
   if (!isVisible) return null;
 

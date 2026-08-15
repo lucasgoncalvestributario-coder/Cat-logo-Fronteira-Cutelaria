@@ -65,6 +65,7 @@ export default function App() {
   });
 
   // Data Loaded Indicator for Splash and Instant Hydration
+  const [isFirestoreSynced, setIsFirestoreSynced] = useState<boolean>(false);
   const [isInitialLoadDone, setIsInitialLoadDone] = useState<boolean>(() => {
     return knives.length > 0;
   });
@@ -139,6 +140,7 @@ export default function App() {
         if (Array.isArray(liveKnives)) {
           setKnives(liveKnives);
           setIsInitialLoadDone(true);
+          setIsFirestoreSynced(true);
         }
       });
 
@@ -151,10 +153,11 @@ export default function App() {
       console.warn('[Firebase] Erro ao conectar listener:', fbErr);
     }
 
-    // Safety fallback so loading screen never hangs if connection is poor or catalog has 0 items
+    // Safety fallback (6s) so loading screen never hangs if client has no internet connection
     const safetyTimer = setTimeout(() => {
       setIsInitialLoadDone(true);
-    }, 3000);
+      setIsFirestoreSynced(true);
+    }, 6000);
 
     // 4. SECONDARY: Server-Sent Events (SSE) fallback for local dev / express proxy
     let eventSource: EventSource | null = null;
@@ -321,8 +324,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative bg-black text-zinc-100 flex flex-col font-sans pb-24 sm:pb-12">
-      {/* Premium Minimalist Blade Loading Screen synchronized with data fetch & images */}
-      <SplashScreen knives={knives} isInitialLoadDone={isInitialLoadDone} />
+      {/* Premium Minimalist Blade Loading Screen strictly synchronized with all database knives */}
+      <SplashScreen knives={knives} isFullySynced={isFirestoreSynced} />
 
       {/* Animated Forge Ember & Particles Background */}
       <EmberBackground />
