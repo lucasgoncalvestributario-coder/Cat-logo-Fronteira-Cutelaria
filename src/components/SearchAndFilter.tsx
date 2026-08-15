@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect, memo } from 'react';
 import { Search, X, ChevronRight, ChevronLeft, LayoutGrid, Layers } from 'lucide-react';
 import { FilterState, Knife } from '../types';
 import { isSameCategory, getAllCategories } from '../lib/categories';
@@ -10,7 +10,12 @@ interface SearchAndFilterProps {
   knives?: Knife[];
 }
 
-export function SearchAndFilter({ filter, onFilterChange, totalResults, knives = [] }: SearchAndFilterProps) {
+export const SearchAndFilter = memo(function SearchAndFilter({
+  filter,
+  onFilterChange,
+  totalResults,
+  knives = [],
+}: SearchAndFilterProps) {
   const [categoriesList, setCategoriesList] = React.useState<string[]>(() => getAllCategories(knives));
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
@@ -44,7 +49,7 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
     if (!isDraggingRef.current || !scrollContainerRef.current) return;
     e.preventDefault();
     const x = e.pageX - scrollContainerRef.current.offsetLeft;
-    const walk = (x - startXRef.current) * 1.5; // Drag speed multiplier
+    const walk = (x - startXRef.current) * 1.5;
     if (Math.abs(walk) > 5) {
       hasMovedRef.current = true;
     }
@@ -85,22 +90,30 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
     touchStartYRef.current = null;
   };
 
-  // Calculate counts for each category
+  // Fast single-pass category count calculation (O(N) instead of O(N * C))
   const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    const visibleKnives = knives.filter((k) => !k.isHidden);
-
-    counts['TODAS'] = visibleKnives.length;
-
-    categoriesList.forEach((cat) => {
-      if (cat === 'TODAS') return;
-      counts[cat] = visibleKnives.filter((k) => isSameCategory(k.category, cat)).length;
+    const counts: Record<string, number> = { TODAS: 0 };
+    categoriesList.forEach((c) => {
+      if (c !== 'TODAS') counts[c] = 0;
     });
+
+    for (let i = 0; i < knives.length; i++) {
+      const k = knives[i];
+      if (k.isHidden) continue;
+      counts['TODAS'] = (counts['TODAS'] || 0) + 1;
+
+      for (let j = 0; j < categoriesList.length; j++) {
+        const cat = categoriesList[j];
+        if (cat !== 'TODAS' && isSameCategory(k.category, cat)) {
+          counts[cat] = (counts[cat] || 0) + 1;
+        }
+      }
+    }
 
     return counts;
   }, [categoriesList, knives]);
 
-  // Check scroll position to display left/right indicators on mobile
+  // Check scroll position to display left/right indicators
   const checkScroll = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
@@ -130,7 +143,7 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
     onFilterChange({
       ...filter,
       category: cat as any,
-      searchQuery: '', // Clear search query when changing category so all knives in category appear
+      searchQuery: '',
     });
     setIsGridModalOpen(false);
   };
@@ -160,7 +173,7 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
           type="text"
           value={filter.searchQuery}
           onChange={handleSearchChange}
-          placeholder="Buscar faca por nome, código (ex: FC-001), aço ou categoria..."
+          placeholder="Buscar por nome, código (ex: FC-001), aço..."
           className="w-full pl-10 pr-10 py-2.5 rounded-2xl bg-[#13151f] border border-white/10 text-xs sm:text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-[#ff6b00] transition-all shadow-inner"
         />
         {filter.searchQuery && (
@@ -230,7 +243,7 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
                   }
                   handleCategorySelect(cat);
                 }}
-                className={`shrink-0 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wider transition-all duration-200 cursor-pointer uppercase flex items-center gap-1.5 ${
+                className={`shrink-0 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wider transition-all duration-150 cursor-pointer uppercase flex items-center gap-1.5 ${
                   isSelected
                     ? 'bg-gradient-to-r from-[#ff6b00] to-[#e05600] text-white shadow-lg shadow-[#ff6b00]/25 scale-102 border border-[#ff8c00]/50'
                     : isExclusiva
@@ -265,7 +278,7 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
         )}
       </div>
 
-      {/* Category Info on Mobile / Desktop */}
+      {/* Category Info */}
       <div className="flex items-center justify-between text-[11px] text-zinc-400 px-1 pt-0.5">
         <span className="font-medium text-zinc-300 truncate mr-2">
           Categoria: <strong className="text-[#ff8c00]">{filter.category}</strong> ({totalResults}{' '}
@@ -278,7 +291,7 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
         )}
       </div>
 
-      {/* Full Modal / Bottom Sheet with ALL Categories and Quantities */}
+      {/* Full Modal Bottom Sheet */}
       {isGridModalOpen && (
         <div
           className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 animate-fadeIn"
@@ -301,7 +314,7 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
             <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3">
               <div className="flex items-center gap-2">
                 <LayoutGrid className="w-5 h-5 text-[#ff6b00]" />
-                <h3 className="font-serif-luxury text-base sm:text-lg font-bold text-white uppercase tracking-wider">
+                <h3 className="font-serif text-base sm:text-lg font-bold text-white uppercase tracking-wider">
                   Todas as Categorias
                 </h3>
               </div>
@@ -314,10 +327,10 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
             </div>
 
             <p className="text-xs text-zinc-400 mb-3">
-              Deslize para ver todas as opções ou selecione uma categoria:
+              Selecione uma categoria para filtrar o catálogo:
             </p>
 
-            {/* Grid of Categories with Quantities - Smooth Touch Scrollable */}
+            {/* Grid of Categories with Quantities */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 overflow-y-auto overscroll-contain touch-pan-y max-h-[60vh] pr-1 pb-2 scroll-smooth">
               {categoriesList.map((cat) => {
                 const isSelected = isSameCategory(filter.category, cat);
@@ -369,8 +382,4 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
       )}
     </div>
   );
-}
-
-
-
-
+});

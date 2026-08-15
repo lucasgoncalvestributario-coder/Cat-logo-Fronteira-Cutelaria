@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ActiveTab, Knife, FilterState, StoreConfig } from './types';
 import {
   saveKnifeToApi,
@@ -239,11 +239,42 @@ export default function App() {
       });
   }, [knives, filter]);
 
+  // Progressive DOM rendering for Android & Mobile Performance (avoids mounting 200+ DOM cards simultaneously)
+  const [displayLimit, setDisplayLimit] = useState(24);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // Reset display limit when filter changes
+  useEffect(() => {
+    setDisplayLimit(24);
+  }, [filter.category, filter.searchQuery, filter.steelFilter]);
+
+  // Seamless progressive scroll loader
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setDisplayLimit((prev) => Math.min(prev + 24, filteredKnives.length));
+        }
+      },
+      { rootMargin: '450px' }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [filteredKnives.length]);
+
+  const visibleKnives = useMemo(() => {
+    return filteredKnives.slice(0, displayLimit);
+  }, [filteredKnives, displayLimit]);
+
   // Open Knife Detail Modal
-  const handleOpenKnifeDetail = (knife: Knife) => {
+  const handleOpenKnifeDetail = useCallback((knife: Knife) => {
     setSelectedKnife(knife);
     setIsDetailModalOpen(true);
-  };
+  }, []);
 
   // Admin CRUD Handlers - Instant local reactivity + backend persistence
   const handleSaveKnife = async (knifeToSave: Partial<Knife>) => {
@@ -342,16 +373,33 @@ export default function App() {
 
             {/* Catalog Grid */}
             {filteredKnives.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 my-2 sm:my-4">
-                {filteredKnives.map((knife, idx) => (
-                  <KnifeCard
-                    key={knife.id}
-                    knife={knife}
-                    index={idx}
-                    onClickCard={handleOpenKnifeDetail}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 my-2 sm:my-4">
+                  {visibleKnives.map((knife, idx) => (
+                    <KnifeCard
+                      key={knife.id}
+                      knife={knife}
+                      index={idx}
+                      onClickCard={handleOpenKnifeDetail}
+                    />
+                  ))}
+                </div>
+
+                {/* Progressive Scroll Sentinel */}
+                <div ref={sentinelRef} className="h-4 w-full" />
+
+                {/* Indicator when more items are available */}
+                {visibleKnives.length < filteredKnives.length && (
+                  <div className="text-center py-3">
+                    <button
+                      onClick={() => setDisplayLimit((prev) => Math.min(prev + 30, filteredKnives.length))}
+                      className="px-4 py-2 rounded-xl bg-zinc-900 border border-white/10 hover:border-amber-500/40 text-xs font-semibold text-zinc-300 hover:text-white transition-all cursor-pointer"
+                    >
+                      Exibindo {visibleKnives.length} de {filteredKnives.length} facas • Ver mais
+                    </button>
+                  </div>
+                )}
+              </>
             ) : !isInitialLoadDone ? (
               /* Loading Skeleton Grid while initial data is arriving */
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 my-2 sm:my-4">
