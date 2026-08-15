@@ -1,49 +1,34 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="gold-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#f59e0b"/>
-      <stop offset="50%" stop-color="#d97706"/>
-      <stop offset="100%" stop-color="#b45309"/>
+    <linearGradient id="orangeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff7f11" />
+      <stop offset="50%" stop-color="#ff6b00" />
+      <stop offset="100%" stop-color="#e05300" />
     </linearGradient>
-    <linearGradient id="dark-bg" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#181a24"/>
-      <stop offset="100%" stop-color="#0d0e12"/>
-    </linearGradient>
-    <linearGradient id="blade-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="60%" stop-color="#94a3b8"/>
-      <stop offset="100%" stop-color="#475569"/>
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2a1f14" />
+      <stop offset="100%" stop-color="#141417" />
     </linearGradient>
   </defs>
 
-  <!-- Background Shield/Circle -->
-  <circle cx="100" cy="100" r="92" fill="url(#dark-bg)" stroke="url(#gold-grad)" stroke-width="6"/>
-  <circle cx="100" cy="100" r="82" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.6"/>
+  <!-- Deep Black Square Background -->
+  <rect x="0" y="0" width="512" height="512" fill="#000000" />
 
-  <!-- Anvil Base -->
-  <path d="M 60 145 L 140 145 L 130 130 L 115 130 L 120 115 L 80 115 L 85 130 L 70 130 Z" fill="url(#gold-grad)"/>
+  <!-- Subtle refined inner border -->
+  <rect x="20" y="20" width="471" height="471" fill="none" stroke="#ff6b00" stroke-width="4" stroke-opacity="0.25" rx="31" />
 
-  <!-- Crossed Forged Knives -->
-  <g transform="translate(100, 92)">
-    <!-- Left Knife -->
-    <g transform="rotate(-35)">
-      <path d="M -5 -45 Q -2 -15 -4 20 L 4 20 Q 2 -15 5 -45 Z" fill="url(#blade-grad)"/>
-      <rect x="-4" y="20" width="8" height="25" rx="3" fill="#78350f" stroke="#f59e0b" stroke-width="1"/>
-      <circle cx="0" cy="42" r="3" fill="#f59e0b"/>
-    </g>
-    <!-- Right Knife -->
-    <g transform="rotate(35)">
-      <path d="M -5 -45 Q -2 -15 -4 20 L 4 20 Q 2 -15 5 -45 Z" fill="url(#blade-grad)"/>
-      <rect x="-4" y="20" width="8" height="25" rx="3" fill="#78350f" stroke="#f59e0b" stroke-width="1"/>
-      <circle cx="0" cy="42" r="3" fill="#f59e0b"/>
-    </g>
-  </g>
-
-  <!-- Ember Flames / Sparks -->
-  <path d="M 100 42 C 103 48 108 52 108 58 C 108 63 104 66 100 66 C 96 66 92 63 92 58 C 92 52 97 48 100 42 Z" fill="#ff6b00"/>
-  <circle cx="85" cy="55" r="2" fill="#f59e0b"/>
-  <circle cx="115" cy="55" r="2" fill="#f59e0b"/>
-
-  <!-- Outer Star Highlights -->
-  <polygon points="100,12 103,19 110,20 105,25 106,32 100,28 94,32 95,25 90,20 97,19" fill="url(#gold-grad)"/>
+  <!-- Centered "CATÁLOGO" in vibrant orange with luxury typography -->
+  <text 
+    x="50%" 
+    y="53%" 
+    font-family="'Cinzel', 'Plus Jakarta Sans', 'Arial Black', 'Trebuchet MS', 'Impact', sans-serif" 
+    font-size="82px" 
+    font-weight="900" 
+    letter-spacing="10px" 
+    fill="url(#orangeGrad)" 
+    text-anchor="middle" 
+    dominant-baseline="central"
+  >
+    CATÁLOGO
+  </text>
 </svg>

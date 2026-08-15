@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cutelaria-v3';
+const CACHE_NAME = 'cutelaria-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
