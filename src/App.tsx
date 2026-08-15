@@ -64,6 +64,11 @@ export default function App() {
     };
   });
 
+  // Data Loaded Indicator for Splash and Instant Hydration
+  const [isInitialLoadDone, setIsInitialLoadDone] = useState<boolean>(() => {
+    return knives.length > 0;
+  });
+
   // Filter & Search State (Default category: 'TODAS')
   const [filter, setFilter] = useState<FilterState>({
     category: 'TODAS',
@@ -115,6 +120,7 @@ export default function App() {
         const local = await idbGetKnives();
         if (Array.isArray(local) && local.length > 0) {
           setKnives((prev) => (prev.length === 0 ? local : prev));
+          setIsInitialLoadDone(true);
         }
       } catch (_) {}
     })();
@@ -132,6 +138,7 @@ export default function App() {
       unsubKnives = subscribeToKnivesFirebase((liveKnives) => {
         if (Array.isArray(liveKnives)) {
           setKnives(liveKnives);
+          setIsInitialLoadDone(true);
         }
       });
 
@@ -143,6 +150,11 @@ export default function App() {
     } catch (fbErr) {
       console.warn('[Firebase] Erro ao conectar listener:', fbErr);
     }
+
+    // Safety fallback so loading screen never hangs if connection is poor or catalog has 0 items
+    const safetyTimer = setTimeout(() => {
+      setIsInitialLoadDone(true);
+    }, 3000);
 
     // 4. SECONDARY: Server-Sent Events (SSE) fallback for local dev / express proxy
     let eventSource: EventSource | null = null;
@@ -197,6 +209,7 @@ export default function App() {
     window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
+      clearTimeout(safetyTimer);
       if (unsubKnives) unsubKnives();
       if (unsubConfig) unsubConfig();
       if (eventSource) eventSource.close();
@@ -308,8 +321,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative bg-black text-zinc-100 flex flex-col font-sans pb-24 sm:pb-12">
-      {/* Premium Initial Loading Splash Screen */}
-      <SplashScreen durationMs={1800} />
+      {/* Premium Minimalist Blade Loading Screen synchronized with data fetch & images */}
+      <SplashScreen knives={knives} isInitialLoadDone={isInitialLoadDone} />
 
       {/* Animated Forge Ember & Particles Background */}
       <EmberBackground />
@@ -345,6 +358,20 @@ export default function App() {
                     index={idx}
                     onClickCard={handleOpenKnifeDetail}
                   />
+                ))}
+              </div>
+            ) : !isInitialLoadDone ? (
+              /* Loading Skeleton Grid while initial data is arriving */
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4 my-2 sm:my-4">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                  <div key={n} className="rounded-2xl bg-[#0e0f14] border border-white/5 overflow-hidden animate-pulse">
+                    <div className="aspect-[4/3] bg-[#161822]" />
+                    <div className="p-3 space-y-2">
+                      <div className="h-4 bg-zinc-800 rounded w-3/4" />
+                      <div className="h-3 bg-zinc-800/60 rounded w-1/2" />
+                      <div className="h-5 bg-amber-950/40 rounded w-2/3 pt-1" />
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : (
