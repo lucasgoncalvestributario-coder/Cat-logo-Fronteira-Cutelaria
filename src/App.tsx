@@ -24,6 +24,7 @@ import { KnifeDetailModal } from './components/KnifeDetailModal';
 import { CustomKnifeConfigurator } from './components/CustomKnifeConfigurator';
 import { AdminPanelModal } from './components/AdminPanelModal';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { SplashScreen } from './components/SplashScreen';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('catalog');
@@ -61,7 +62,8 @@ export default function App() {
     };
   });
 
-  // Data Loaded Indicator for Instant Hydration
+  // Dynamic Loading Screen visibility & Firestore Sync tracker
+  const [isSplashVisible, setIsSplashVisible] = useState(true);
   const [isFirestoreSynced, setIsFirestoreSynced] = useState<boolean>(false);
   const [isInitialLoadDone, setIsInitialLoadDone] = useState<boolean>(() => {
     return knives.length > 0;
@@ -305,6 +307,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative bg-black text-zinc-100 flex flex-col font-sans pb-24 sm:pb-12">
+      {/* Dynamic Data-Driven Loading Screen: covers catalog until full list of ~201 knives arrives */}
+      {isSplashVisible && (
+        <SplashScreen
+          isDataReady={isFirestoreSynced || (knives.length > 0 && isInitialLoadDone)}
+          knivesCount={knives.length}
+          onFinish={() => setIsSplashVisible(false)}
+        />
+      )}
+
       {/* Animated Forge Ember & Particles Background */}
       <EmberBackground />
 
