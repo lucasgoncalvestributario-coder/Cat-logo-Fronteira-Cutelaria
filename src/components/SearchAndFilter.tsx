@@ -11,7 +11,7 @@ interface SearchAndFilterProps {
 }
 
 export function SearchAndFilter({ filter, onFilterChange, totalResults, knives = [] }: SearchAndFilterProps) {
-  const [categoriesList, setCategoriesList] = React.useState<string[]>(() => getAllCategories());
+  const [categoriesList, setCategoriesList] = React.useState<string[]>(() => getAllCategories(knives));
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
   const [isGridModalOpen, setIsGridModalOpen] = useState(false);
@@ -19,17 +19,71 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
 
   React.useEffect(() => {
     const refreshCategories = () => {
-      setCategoriesList(getAllCategories());
+      setCategoriesList(getAllCategories(knives));
     };
 
     window.addEventListener('categories_updated', refreshCategories);
     return () => window.removeEventListener('categories_updated', refreshCategories);
-  }, []);
-
-  // Sync when knives change as well
-  React.useEffect(() => {
-    setCategoriesList(getAllCategories());
   }, [knives]);
+
+  // Mouse Drag to Scroll for horizontal category strip (Desktop & Trackpad swipe)
+  const isDraggingRef = useRef(false);
+  const startXRef = useRef(0);
+  const scrollLeftStartRef = useRef(0);
+  const hasMovedRef = useRef(false);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!scrollContainerRef.current) return;
+    isDraggingRef.current = true;
+    hasMovedRef.current = false;
+    startXRef.current = e.pageX - scrollContainerRef.current.offsetLeft;
+    scrollLeftStartRef.current = scrollContainerRef.current.scrollLeft;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDraggingRef.current || !scrollContainerRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - scrollContainerRef.current.offsetLeft;
+    const walk = (x - startXRef.current) * 1.5; // Drag speed multiplier
+    if (Math.abs(walk) > 5) {
+      hasMovedRef.current = true;
+    }
+    scrollContainerRef.current.scrollLeft = scrollLeftStartRef.current - walk;
+    checkScroll();
+  };
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false;
+  };
+
+  const handleMouseLeave = () => {
+    isDraggingRef.current = false;
+  };
+
+  // Touch swipe to dismiss for modal bottom sheet on mobile
+  const touchStartYRef = useRef<number | null>(null);
+  const [dragOffset, setDragOffset] = useState(0);
+
+  const handleTouchStartSheet = (e: React.TouchEvent) => {
+    touchStartYRef.current = e.touches[0].clientY;
+  };
+
+  const handleTouchMoveSheet = (e: React.TouchEvent) => {
+    if (touchStartYRef.current === null) return;
+    const currentY = e.touches[0].clientY;
+    const diff = currentY - touchStartYRef.current;
+    if (diff > 0) {
+      setDragOffset(diff);
+    }
+  };
+
+  const handleTouchEndSheet = () => {
+    if (dragOffset > 100) {
+      setIsGridModalOpen(false);
+    }
+    setDragOffset(0);
+    touchStartYRef.current = null;
+  };
 
   // Calculate counts for each category
   const categoryCounts = useMemo(() => {
@@ -151,11 +205,15 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
           </div>
         )}
 
-        {/* Scrollable Pill Strip */}
+        {/* Scrollable & Drag-Swipeable Pill Strip */}
         <div
           ref={scrollContainerRef}
           onScroll={checkScroll}
-          className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 px-1 scroll-smooth"
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
+          className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 px-1 scroll-smooth select-none cursor-grab active:cursor-grabbing touch-pan-x overscroll-x-contain"
         >
           {categoriesList.map((cat) => {
             const isSelected = isSameCategory(filter.category, cat);
@@ -165,7 +223,13 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
             return (
               <button
                 key={cat}
-                onClick={() => handleCategorySelect(cat)}
+                onClick={(e) => {
+                  if (hasMovedRef.current) {
+                    e.preventDefault();
+                    return;
+                  }
+                  handleCategorySelect(cat);
+                }}
                 className={`shrink-0 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-bold tracking-wider transition-all duration-200 cursor-pointer uppercase flex items-center gap-1.5 ${
                   isSelected
                     ? 'bg-gradient-to-r from-[#ff6b00] to-[#e05600] text-white shadow-lg shadow-[#ff6b00]/25 scale-102 border border-[#ff8c00]/50'
@@ -216,13 +280,25 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
 
       {/* Full Modal / Bottom Sheet with ALL Categories and Quantities */}
       {isGridModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 animate-fadeIn">
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 animate-fadeIn"
+          onClick={() => setIsGridModalOpen(false)}
+        >
           <div
-            className="w-full max-w-lg bg-[#0e1017] border border-white/10 rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl max-h-[85vh] flex flex-col"
+            className="w-full max-w-lg bg-[#0e1017] border border-white/10 rounded-t-3xl sm:rounded-3xl p-5 shadow-2xl max-h-[88vh] flex flex-col transition-transform duration-150"
+            style={{
+              transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : 'none',
+            }}
             onClick={(e) => e.stopPropagation()}
+            onTouchStart={handleTouchStartSheet}
+            onTouchMove={handleTouchMoveSheet}
+            onTouchEnd={handleTouchEndSheet}
           >
+            {/* Mobile Swipe-to-Dismiss Pill Handle */}
+            <div className="w-12 h-1.5 bg-zinc-600/70 hover:bg-zinc-500 rounded-full mx-auto mb-3 sm:hidden cursor-grab active:cursor-grabbing" />
+
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-3">
               <div className="flex items-center gap-2">
                 <LayoutGrid className="w-5 h-5 text-[#ff6b00]" />
                 <h3 className="font-serif-luxury text-base sm:text-lg font-bold text-white uppercase tracking-wider">
@@ -238,11 +314,11 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
             </div>
 
             <p className="text-xs text-zinc-400 mb-3">
-              Selecione uma categoria para filtrar as facas disponíveis:
+              Deslize para ver todas as opções ou selecione uma categoria:
             </p>
 
-            {/* Grid of Categories with Quantities */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 overflow-y-auto pr-1">
+            {/* Grid of Categories with Quantities - Smooth Touch Scrollable */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 overflow-y-auto overscroll-contain touch-pan-y max-h-[60vh] pr-1 pb-2 scroll-smooth">
               {categoriesList.map((cat) => {
                 const isSelected = isSameCategory(filter.category, cat);
                 const count = categoryCounts[cat] ?? 0;
@@ -252,7 +328,7 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
                   <button
                     key={cat}
                     onClick={() => handleCategorySelect(cat)}
-                    className={`flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer select-none active:scale-98 ${
                       isSelected
                         ? 'bg-[#ff6b00] text-white border-[#ff8c00] shadow-md shadow-[#ff6b00]/30 font-bold'
                         : isExclusiva
@@ -280,7 +356,7 @@ export function SearchAndFilter({ filter, onFilterChange, totalResults, knives =
             </div>
 
             {/* Modal Footer */}
-            <div className="mt-4 pt-3 border-t border-white/10 flex justify-end">
+            <div className="mt-3 pt-3 border-t border-white/10 flex justify-end">
               <button
                 onClick={() => setIsGridModalOpen(false)}
                 className="w-full py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold uppercase tracking-wider cursor-pointer"

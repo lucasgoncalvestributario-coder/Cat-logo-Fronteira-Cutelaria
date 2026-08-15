@@ -69,6 +69,7 @@ export default function App() {
   const [isInitialLoadDone, setIsInitialLoadDone] = useState<boolean>(() => {
     return knives.length > 0;
   });
+  const [isSplashActive, setIsSplashActive] = useState<boolean>(true);
 
   // Filter & Search State (Default category: 'TODAS')
   const [filter, setFilter] = useState<FilterState>({
@@ -324,8 +325,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative bg-black text-zinc-100 flex flex-col font-sans pb-24 sm:pb-12">
-      {/* Premium Minimalist Blade Loading Screen strictly synchronized with all database knives */}
-      <SplashScreen knives={knives} isFullySynced={isFirestoreSynced} />
+      {/* Premium Minimalist Blade Loading Screen strictly synchronized with all database knives (12-second sequence) */}
+      {isSplashActive && (
+        <SplashScreen
+          knives={knives}
+          isFullySynced={isFirestoreSynced}
+          onFinished={() => setIsSplashActive(false)}
+        />
+      )}
 
       {/* Animated Forge Ember & Particles Background */}
       <EmberBackground />

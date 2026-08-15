@@ -11,7 +11,7 @@ import { SelectCustomerSaleModal } from './SelectCustomerSaleModal';
 import { SalesReportModal } from './SalesReportModal';
 import { Customer, getStoredCustomers, getBirthdayMatches, getCustomerLastPurchaseInfo } from '../lib/customersStorage';
 import { playVaniVoiceReport, stopVoiceReport } from '../lib/adminVoiceReport';
-import { subscribeToSalesFirebase } from '../lib/firebase';
+import { subscribeToSalesFirebase, saveConfigFirebase } from '../lib/firebase';
 
 export const DEFAULT_STEEL_TYPES = [
   'Disco de Arado',
@@ -109,18 +109,22 @@ export function AdminPanelModal({
   const [saveMessage, setSaveMessage] = useState('');
 
   // All active categories state
-  const [allCategoriesList, setAllCategoriesList] = useState<string[]>(() => getAllCategories());
+  const [allCategoriesList, setAllCategoriesList] = useState<string[]>(() => getAllCategories(knives, config?.customCategories));
   const [showAddCatModal, setShowAddCatModal] = useState(false);
   const [newCategoryInput, setNewCategoryInput] = useState('');
 
-  // Keep categories list updated when categories_updated event fires
+  // Keep categories list updated when categories_updated event fires or knives/config update
   React.useEffect(() => {
     const handleCatsUpdated = () => {
-      setAllCategoriesList(getAllCategories());
+      setAllCategoriesList(getAllCategories(knives, config?.customCategories));
     };
     window.addEventListener('categories_updated', handleCatsUpdated);
     return () => window.removeEventListener('categories_updated', handleCatsUpdated);
-  }, []);
+  }, [knives, config?.customCategories]);
+
+  React.useEffect(() => {
+    setAllCategoriesList(getAllCategories(knives, config?.customCategories));
+  }, [knives, config?.customCategories]);
 
   // Custom options states for Steel, Handle, and Length
   const [isCustomSteel, setIsCustomSteel] = useState(false);
@@ -2588,6 +2592,16 @@ export function AdminPanelModal({
                     if (editingKnife) {
                       setEditingKnife({ ...editingKnife, category: catUpper });
                     }
+                    // Persist custom categories in Firebase StoreConfig
+                    const customCats = updated.filter(
+                      (c) => !BASE_CATEGORIES.some((b) => isSameCategory(b, c))
+                    );
+                    const updatedConfig: StoreConfig = {
+                      ...config,
+                      customCategories: customCats,
+                    };
+                    saveConfigFirebase(updatedConfig).catch(() => {});
+
                     setSaveMessage(`✓ Categoria "${catUpper}" adicionada com sucesso!`);
                     setTimeout(() => setSaveMessage(''), 3500);
                     setNewCategoryInput('');

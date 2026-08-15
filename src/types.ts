@@ -1,10 +1,14 @@
 export type Category = 
   | 'TODAS'
+  | 'PROMOÇÕES'
+  | 'RÚSTICAS'
   | 'CAMPEIRAS'
   | 'TRADICIONAIS'
   | 'TIMES'
   | 'PREMIUM'
-  | 'COLECIONADOR';
+  | 'COLECIONADOR'
+  | 'TÁBUAS'
+  | string;
 
 export interface Knife {
   id: string;
@@ -39,7 +43,7 @@ export interface Knife {
 }
 
 export interface FilterState {
-  category: Category;
+  category: Category | string;
   searchQuery: string;
   steelFilter: string;
   sortBy: 'featured' | 'price-asc' | 'price-desc' | 'name';
@@ -52,6 +56,7 @@ export interface StoreConfig {
   welcomeMessage: string;
   heroHeadline?: string;
   heroSubheadline?: string;
+  customCategories?: string[];
 }
 
 export type ActiveTab = 'catalog' | 'custom';

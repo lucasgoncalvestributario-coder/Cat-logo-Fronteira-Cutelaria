@@ -51,40 +51,73 @@ export const DEFAULT_BASE_CATEGORIES = [
   'TRADICIONAIS',
   'TIMES',
   'PREMIUM',
-  'COLECIONADOR'
+  'COLECIONADOR',
+  'TÁBUAS'
 ];
 
 const CATEGORIES_KEY = 'cutelaria_all_active_categories_v2';
 const CUSTOM_CATS_KEY = 'cutelaria_custom_categories_v1';
 
-export function getAllCategories(): string[] {
+export function getAllCategories(knives?: any[], customCats?: string[]): string[] {
+  const mergedList: string[] = [...DEFAULT_BASE_CATEGORIES];
+
+  // 1. Check localStorage
   try {
     const raw = localStorage.getItem(CATEGORIES_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // Ensure 'TODAS' is at index 0
-        const withoutTodas = parsed.filter(c => String(c).trim().toUpperCase() !== 'TODAS');
-        return ['TODAS', ...withoutTodas];
+      if (Array.isArray(parsed)) {
+        parsed.forEach((c) => {
+          const clean = String(c || '').trim().toUpperCase();
+          if (clean && clean !== 'TODAS' && !mergedList.some((m) => isSameCategory(m, clean))) {
+            mergedList.push(clean);
+          }
+        });
       }
     }
+  } catch (e) {
+    console.error('Error reading categories from localStorage:', e);
+  }
 
-    // Migration / Fallback: check legacy custom categories
-    const legacyCustom = getStoredCustomCategories();
-    const merged = [...DEFAULT_BASE_CATEGORIES];
+  // 2. Check customCats parameter or legacy custom categories
+  const legacyCustom = customCats && Array.isArray(customCats) && customCats.length > 0
+    ? customCats
+    : getStoredCustomCategories();
+
+  if (Array.isArray(legacyCustom)) {
     legacyCustom.forEach((c) => {
-      const clean = String(c).trim().toUpperCase();
-      if (clean && !merged.some((m) => isSameCategory(m, clean))) {
-        merged.push(clean);
+      const clean = String(c || '').trim().toUpperCase();
+      if (clean && clean !== 'TODAS' && !mergedList.some((m) => isSameCategory(m, clean))) {
+        mergedList.push(clean);
       }
     });
-
-    safeSetLocalStorage(CATEGORIES_KEY, JSON.stringify(merged));
-    return merged;
-  } catch (e) {
-    console.error('Error reading categories:', e);
   }
-  return [...DEFAULT_BASE_CATEGORIES];
+
+  // 3. Extract dynamically from loaded knives array (e.g. from Firebase Firestore)
+  if (Array.isArray(knives)) {
+    knives.forEach((k) => {
+      const cat = String(k.category || '').trim().toUpperCase();
+      if (cat && cat !== 'TODAS' && !mergedList.some((m) => isSameCategory(m, cat))) {
+        mergedList.push(cat);
+      }
+      const origCat = String(k.originalCategory || '').trim().toUpperCase();
+      if (origCat && origCat !== 'TODAS' && !mergedList.some((m) => isSameCategory(m, origCat))) {
+        mergedList.push(origCat);
+      }
+    });
+  }
+
+  // Ensure 'TODAS' is always first, 'PROMOÇÕES' second (if present), then the remaining categories
+  const withoutTodas = mergedList.filter((c) => normalizeCatString(c) !== 'TODAS');
+  const promo = withoutTodas.find((c) => normalizeCatString(c) === 'PROMOCOES');
+  const rest = withoutTodas.filter((c) => normalizeCatString(c) !== 'PROMOCOES');
+
+  const finalResult = promo ? ['TODAS', promo, ...rest] : ['TODAS', ...rest];
+
+  // Safely cache in localStorage
+  safeSetLocalStorage(CATEGORIES_KEY, JSON.stringify(finalResult));
+
+  return finalResult;
 }
 
 export const BASE_CATEGORIES = DEFAULT_BASE_CATEGORIES;

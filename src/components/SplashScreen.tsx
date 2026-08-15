@@ -2,111 +2,107 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Knife } from '../types';
 
 interface SplashScreenProps {
-  knives: Knife[];
-  isFullySynced: boolean;
+  knives?: Knife[];
+  isFullySynced?: boolean;
   onFinished?: () => void;
 }
 
 export function SplashScreen({
-  knives,
-  isFullySynced,
+  knives = [],
   onFinished,
 }: SplashScreenProps) {
   const [isVisible, setIsVisible] = useState(true);
   const [isFadingOut, setIsFadingOut] = useState(false);
-  const [progress, setProgress] = useState(25);
-  const [statusText, setStatusText] = useState('Preparando o catálogo...');
+  const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState('Iniciando forja do catálogo...');
+  
+  const knivesRef = useRef(knives);
+  const onFinishedRef = useRef(onFinished);
   const isFinishedRef = useRef(false);
 
   useEffect(() => {
-    // Stage 1: Initializing
-    const timer1 = setTimeout(() => {
-      if (!isFinishedRef.current) {
-        setProgress(45);
-        setStatusText('Carregando facas...');
-      }
-    }, 250);
+    knivesRef.current = knives;
+  }, [knives]);
 
-    // Stage 2: Organizing
-    const timer2 = setTimeout(() => {
-      if (!isFinishedRef.current) {
-        setProgress(75);
-        const count = knives.length;
-        setStatusText(count > 0 ? `Sincronizando ${count} facas...` : 'Preparando produtos...');
-      }
-    }, 600);
-
-    // Stage 3: Ready or safety release
-    const timer3 = setTimeout(() => {
-      if (!isFinishedRef.current) {
-        setProgress(95);
-        setStatusText('Organizando catálogo...');
-      }
-    }, 1000);
-
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
-    };
-  }, []);
-
-  // When data is synced or knives are available, finish smoothly
   useEffect(() => {
-    if (isFinishedRef.current) return;
-
-    if (isFullySynced || knives.length > 0) {
-      const readyTimer = setTimeout(() => {
-        if (isFinishedRef.current) return;
-        isFinishedRef.current = true;
-        setProgress(100);
-        const count = knives.length;
-        setStatusText(count > 0 ? `Catálogo pronto (${count} facas).` : 'Catálogo pronto.');
-
-        setTimeout(() => {
-          setIsFadingOut(true);
-          setTimeout(() => {
-            setIsVisible(false);
-            if (onFinished) onFinished();
-          }, 350);
-        }, 300);
-      }, 700);
-
-      return () => clearTimeout(readyTimer);
-    }
-  }, [isFullySynced, knives.length, onFinished]);
-
-  // Absolute safety timeout: never block the user for more than 2 seconds under any circumstance
-  useEffect(() => {
-    const absoluteSafety = setTimeout(() => {
-      if (!isFinishedRef.current) {
-        isFinishedRef.current = true;
-        setProgress(100);
-        setStatusText('Catálogo pronto.');
-        setIsFadingOut(true);
-        setTimeout(() => {
-          setIsVisible(false);
-          if (onFinished) onFinished();
-        }, 350);
-      }
-    }, 2000);
-
-    return () => clearTimeout(absoluteSafety);
+    onFinishedRef.current = onFinished;
   }, [onFinished]);
+
+  // Preload knife images in background so they are ready instantly
+  useEffect(() => {
+    if (Array.isArray(knives) && knives.length > 0) {
+      const toPreload = knives.slice(0, 20);
+      toPreload.forEach((k) => {
+        const url = (k.images && k.images[0]) || (k as any).imageUrl;
+        if (url && typeof url === 'string' && url.startsWith('http')) {
+          const img = new Image();
+          img.src = url;
+        }
+      });
+    }
+  }, [knives]);
+
+  // 12-Second Smooth Progress Timer (Runs ONCE on mount, uninterrupted)
+  useEffect(() => {
+    const TOTAL_DURATION_MS = 12000; // 12 seconds
+    const INTERVAL_MS = 50; // 50ms updates
+    const startTime = Date.now();
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const pct = Math.min(Math.floor((elapsed / TOTAL_DURATION_MS) * 100), 100);
+      setProgress(pct);
+
+      if (elapsed < 2000) {
+        setStatusText('Iniciando forja do catálogo...');
+      } else if (elapsed < 4500) {
+        setStatusText('Conectando ao acervo de peças...');
+      } else if (elapsed < 7000) {
+        const count = knivesRef.current.length;
+        setStatusText(count > 0 ? `Sincronizando ${count} modelos artesanais...` : 'Sincronizando facas e modelos...');
+      } else if (elapsed < 9500) {
+        setStatusText('Carregando lâminas e detalhes em alta definição...');
+      } else if (elapsed < 11500) {
+        setStatusText('Organizando estoque e categorias...');
+      } else {
+        setStatusText('Catálogo pronto! Abrindo...');
+      }
+
+      if (elapsed >= TOTAL_DURATION_MS) {
+        clearInterval(interval);
+        if (!isFinishedRef.current) {
+          isFinishedRef.current = true;
+          setProgress(100);
+          setStatusText('Catálogo pronto! Abrindo...');
+          
+          setTimeout(() => {
+            setIsFadingOut(true);
+            setTimeout(() => {
+              setIsVisible(false);
+              if (onFinishedRef.current) onFinishedRef.current();
+            }, 600);
+          }, 300);
+        }
+      }
+    }, INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, []);
 
   if (!isVisible) return null;
 
   return (
     <div
-      className={`fixed inset-0 z-50 bg-[#030406] flex flex-col items-center justify-center p-6 select-none overflow-hidden transition-opacity duration-500 ease-out ${
+      className={`fixed inset-0 z-[99999] w-screen h-screen bg-black flex flex-col items-center justify-center p-6 select-none overflow-hidden transition-opacity duration-700 ease-out ${
         isFadingOut ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
+      style={{ backgroundColor: '#000000' }}
     >
-      {/* Deep dark steel radial gradient */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-950/15 via-[#040508] to-[#010203] pointer-events-none" />
+      {/* Pure Black Canvas with subtle center glow */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-amber-950/25 via-[#000000] to-[#000000] pointer-events-none" />
 
       {/* Subtle forge embers */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30">
+      <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-40">
         <div className="absolute w-1 h-1 bg-[#ff7f11] rounded-full animate-ping top-1/3 left-1/4 shadow-[0_0_10px_#ff6b00]" />
         <div className="absolute w-1.5 h-1.5 bg-[#ff4500] rounded-full animate-pulse top-2/3 right-1/3 shadow-[0_0_12px_#ff4500]" />
         <div className="absolute w-1 h-1 bg-amber-200 rounded-full animate-ping top-1/2 right-1/4 shadow-[0_0_8px_#f59e0b]" />
@@ -120,7 +116,7 @@ export function SplashScreen({
             viewBox="0 0 320 100"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
-            className="w-full h-full drop-shadow-[0_0_15px_rgba(255,107,0,0.35)]"
+            className="w-full h-full drop-shadow-[0_0_18px_rgba(255,107,0,0.45)]"
           >
             <defs>
               <linearGradient id="bladeSteel" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -194,20 +190,23 @@ export function SplashScreen({
         {/* Minimalist Progress Track and Real Stage Status */}
         <div className="w-full space-y-3.5">
           {/* Razor-Thin Progress Line */}
-          <div className="w-48 sm:w-56 h-[2px] bg-zinc-900/90 rounded-full mx-auto overflow-hidden relative border border-white/5">
+          <div className="w-52 sm:w-64 h-[3px] bg-zinc-900 rounded-full mx-auto overflow-hidden relative border border-white/10 shadow-inner">
             <div
-              className="h-full bg-gradient-to-r from-[#ff4500] via-[#ff7f11] to-[#ffe4b5] transition-all duration-300 ease-out shadow-[0_0_8px_#ff6b00]"
+              className="h-full bg-gradient-to-r from-[#ff4500] via-[#ff7f11] to-[#ffe4b5] transition-all duration-100 ease-linear shadow-[0_0_12px_#ff6b00]"
               style={{ width: `${progress}%` }}
             />
           </div>
 
-          {/* Dynamic Status Typography */}
-          <div className="h-5 flex items-center justify-center">
+          {/* Dynamic Status Typography with Percentage */}
+          <div className="space-y-1">
             <p
               key={statusText}
-              className="text-xs font-medium tracking-[0.2em] uppercase transition-all duration-200 text-zinc-300"
+              className="text-xs font-semibold tracking-[0.18em] uppercase transition-all duration-300 text-zinc-300 min-h-[20px] flex items-center justify-center px-2"
             >
               {statusText}
+            </p>
+            <p className="text-[11px] font-mono text-amber-500/80 font-bold">
+              {progress}%
             </p>
           </div>
         </div>
