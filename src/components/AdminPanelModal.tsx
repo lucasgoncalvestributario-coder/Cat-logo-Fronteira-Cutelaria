@@ -1,16 +1,13 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Lock, X, Plus, Edit, Trash2, Eye, Upload, Settings, AlertCircle, Save, CheckCircle, FolderPlus, ShoppingBag, DollarSign, Calendar, TrendingUp, Package, RotateCcw, AlertTriangle, CheckCircle2, Search, Flame, Users, Gift, Cake, FileBarChart, Home, Volume2, VolumeX, Sparkles, Tag, Printer, Download, RefreshCw } from 'lucide-react';
+import { Lock, X, Plus, Edit, Trash2, Eye, Upload, Settings, AlertCircle, Save, CheckCircle, FolderPlus, ShoppingBag, DollarSign, Calendar, TrendingUp, Package, RotateCcw, AlertTriangle, CheckCircle2, Search, Flame, FileBarChart, Home, Sparkles, Tag, Printer, Download, RefreshCw, Percent } from 'lucide-react';
 import { Knife, StoreConfig, Category } from '../types';
 import { formatCurrencyBRL, generateKnifeWhatsAppLink } from '../lib/whatsapp';
 import { BASE_CATEGORIES, getAllCategories, saveCategory, deleteCategory, isSameCategory } from '../lib/categories';
 import { getNextKnifeCode } from '../lib/codeUtils';
 import { getStoredSalesLog, fetchSalesLogAPI, saveSaleRecord, removeSaleRecord, clearSalesLog, SaleRecord, PaymentMethod } from '../lib/salesStorage';
 import { compressImageFile } from '../lib/imageCompressor';
-import { CrmSection } from './CrmSection';
-import { SelectCustomerSaleModal } from './SelectCustomerSaleModal';
+import { RegisterSaleModal } from './RegisterSaleModal';
 import { SalesReportModal } from './SalesReportModal';
-import { Customer, getStoredCustomers, getBirthdayMatches, getCustomerLastPurchaseInfo } from '../lib/customersStorage';
-import { playVaniVoiceReport, stopVoiceReport } from '../lib/adminVoiceReport';
 import { subscribeToSalesFirebase, saveConfigFirebase } from '../lib/firebase';
 
 export const DEFAULT_STEEL_TYPES = [
@@ -69,21 +66,15 @@ export function AdminPanelModal({
   const [syncStatusMsg, setSyncStatusMsg] = useState('');
   const backupFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sub-tabs in admin panel: 'knives' | 'vendas' | 'crm' | 'categories' | 'form' | 'settings'
-  const [activeTab, setActiveTab] = useState<'knives' | 'vendas' | 'crm' | 'categories' | 'form' | 'settings'>('knives');
+  // Sub-tabs in admin panel: 'knives' | 'vendas' | 'categories' | 'form' | 'settings'
+  const [activeTab, setActiveTab] = useState<'knives' | 'vendas' | 'categories' | 'form' | 'settings'>('knives');
 
-  // Customer sale modal state
-  const [saleTargetKnife, setSaleTargetKnife] = useState<Knife | null>(null);
-  const [isSelectCustomerModalOpen, setIsSelectCustomerModalOpen] = useState(false);
-  const [pendingSaleKnife, setPendingSaleKnife] = useState<Knife | null>(null);
-  const [pendingPaymentMethod, setPendingPaymentMethod] = useState<PaymentMethod>('pix');
-  const [crmSubTab, setCrmSubTab] = useState<'clientes' | 'aniversariantes' | 'fidelidade' | 'novo_cliente'>('clientes');
+  // Register sale modal state
+  const [saleModalKnife, setSaleModalKnife] = useState<Knife | null>(null);
+  const [isRegisterSaleModalOpen, setIsRegisterSaleModalOpen] = useState(false);
 
   // Sales report modal state
   const [isSalesReportOpen, setIsSalesReportOpen] = useState(false);
-
-  // Vendas internal sub-tabs: 'historico' | 'esgotadas'
-  const [vendasSubTab, setVendasSubTab] = useState<'historico' | 'esgotadas'>('historico');
 
   // Sales log state
   const [salesLog, setSalesLog] = useState<SaleRecord[]>([]);
@@ -148,51 +139,6 @@ export function AdminPanelModal({
   const isKnifeNameInvalid = currentKnifeName.length > 0 && currentKnifeName.length < 3;
   const isKnifePriceInvalid = isNaN(currentKnifePrice) || currentKnifePrice <= 0;
   const isKnifeImagesEmpty = knifeImages.length === 0;
-
-  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
-
-  // Play daily audio report on first admin load of the day (only in Admin)
-  React.useEffect(() => {
-    if (isOpen && isAuthenticated) {
-      const customers = getStoredCustomers();
-      const { today, thisMonth } = getBirthdayMatches(customers);
-      const birthdaysCount = today.length + thisMonth.length;
-      const fidelityCount = customers.filter(c => c.purchasesCount >= 10).length;
-      const soldOutCount = knives.filter(k => k.isOutofStock || k.status === 'esgotado' || (typeof k.quantity === 'number' && k.quantity <= 0)).length;
-      const allSales = getStoredSalesLog();
-      const inactiveCount = customers.filter(c => getCustomerLastPurchaseInfo(c, allSales).isInactive20Days).length;
-
-      const timer = setTimeout(() => {
-        playVaniVoiceReport({
-          birthdaysCount,
-          soldOutCount,
-          fidelityCount,
-          inactiveCount,
-        }, false);
-      }, 600);
-
-      return () => clearTimeout(timer);
-    }
-  }, [isOpen, isAuthenticated, knives]);
-
-  const handleManualTriggerVoiceReport = () => {
-    const customers = getStoredCustomers();
-    const { today, thisMonth } = getBirthdayMatches(customers);
-    const birthdaysCount = today.length + thisMonth.length;
-    const fidelityCount = customers.filter(c => c.purchasesCount >= 10).length;
-    const soldOutCount = knives.filter(k => k.isOutofStock || k.status === 'esgotado' || (typeof k.quantity === 'number' && k.quantity <= 0)).length;
-    const allSales = getStoredSalesLog();
-    const inactiveCount = customers.filter(c => getCustomerLastPurchaseInfo(c, allSales).isInactive20Days).length;
-
-    setIsPlayingVoice(true);
-    playVaniVoiceReport({
-      birthdaysCount,
-      soldOutCount,
-      fidelityCount,
-      inactiveCount,
-    }, true);
-    setTimeout(() => setIsPlayingVoice(false), 8000);
-  };
 
   // Always require authentication every time Admin modal is opened
   React.useEffect(() => {
@@ -636,51 +582,41 @@ export function AdminPanelModal({
   };
 
   const handleOpenSaleModal = (knife: Knife) => {
-    setSaleTargetKnife(knife);
-    setIsSelectCustomerModalOpen(true);
+    setSaleModalKnife(knife);
+    setIsRegisterSaleModalOpen(true);
   };
 
-  const handleGoToCrmRegister = (knife: Knife, paymentMethod?: PaymentMethod) => {
-    setIsSelectCustomerModalOpen(false);
-    setSaleTargetKnife(null);
-    setPendingSaleKnife(knife);
-    if (paymentMethod) {
-      setPendingPaymentMethod(paymentMethod);
-    }
-    setCrmSubTab('novo_cliente');
-    setActiveTab('crm');
-  };
-
-  const handleCompleteSaleFromCrm = async (knife: Knife, customer: Customer, paymentMethod?: PaymentMethod) => {
-    await handleConfirmSaleWithCustomer(knife, customer, paymentMethod);
-    setPendingSaleKnife(null);
-  };
-
-  const handleConfirmSaleWithCustomer = async (
+  const handleConfirmSale = async (
     knife: Knife,
-    customer: Customer | null,
-    paymentMethod?: PaymentMethod
+    soldPrice: number,
+    paymentMethod: PaymentMethod,
+    note?: string
   ) => {
     const currentQty = typeof knife.quantity === 'number' ? knife.quantity : 1;
     const newQty = Math.max(0, currentQty - 1);
     const isSoldOut = newQty === 0;
 
-    // 1. Register sale in sales storage
-    const updatedLog = saveSaleRecord(knife, customer, paymentMethod);
+    // 1. Register sale in sales storage with custom price / discount
+    const updatedLog = saveSaleRecord(knife, soldPrice, paymentMethod, note);
     setSalesLog(updatedLog);
 
-    // 2. Automatically subtract 1 from stock and update status
+    // 2. Automatically subtract 1 from stock and hide from catalog if 0 units left
     await onSaveKnife({
       ...knife,
       quantity: newQty,
       isOutofStock: isSoldOut,
       status: isSoldOut ? 'esgotado' : 'disponivel',
+      isHidden: isSoldOut ? true : Boolean(knife.isHidden),
     });
 
-    const clientMsg = customer ? ` para ${customer.name} (+1 compra computada)` : '';
-    const paymentLabel = paymentMethod ? ` (${paymentMethod.replace('_', ' ').toUpperCase()})` : '';
-    setSaveMessage(`✓ Venda registrada da faca "${knife.name}" (CÓD: ${knife.code})${clientMsg}${paymentLabel}! Estoque restante: ${newQty} un.`);
-    setTimeout(() => setSaveMessage(''), 4000);
+    const discountMsg = Number(knife.price) > soldPrice ? ` (Preço c/ desconto: ${formatCurrencyBRL(soldPrice)})` : '';
+    const paymentLabel = paymentMethod ? ` [${paymentMethod.replace('_', ' ').toUpperCase()}]` : '';
+    setSaveMessage(
+      `✓ Venda registrada: "${knife.name}" (CÓD: ${knife.code})${discountMsg}${paymentLabel}! ${
+        isSoldOut ? 'Estoque esgotado - Faca removida do catálogo.' : `Estoque restante: ${newQty} un.`
+      }`
+    );
+    setTimeout(() => setSaveMessage(''), 4500);
   };
 
   const handleRegisterSale = async (knife: Knife) => {
@@ -695,13 +631,13 @@ export function AdminPanelModal({
   };
 
   const handleUndoSale = async (sale: SaleRecord) => {
-    // 1. Remove sale from sales log if stored immediately
+    // 1. Remove sale from sales log
     if (!sale.id.startsWith('synth-')) {
       const updatedLog = removeSaleRecord(sale.id);
       setSalesLog(updatedLog);
     }
 
-    // 2. Add 1 unit back to catalog stock for this knife immediately
+    // 2. Add 1 unit back to catalog stock and re-enable visibility in catalog
     const targetKnife = knives.find((k) => k.id === sale.knifeId || (k.code && k.code === sale.code));
     if (targetKnife) {
       const currentQty = typeof targetKnife.quantity === 'number' ? targetKnife.quantity : 0;
@@ -712,11 +648,12 @@ export function AdminPanelModal({
         quantity: restoredQty,
         isOutofStock: false,
         status: 'disponivel',
+        isHidden: false,
       });
 
-      setSaveMessage(`✓ Venda desfeita imediatamente! 1 unidade da faca "${targetKnife.name}" (CÓD: ${targetKnife.code}) devolvida ao estoque.`);
+      setSaveMessage(`✓ Venda desfeita! 1 unidade da faca "${targetKnife.name}" (CÓD: ${targetKnife.code}) reativada no catálogo.`);
     } else {
-      setSaveMessage('✓ Registro de venda desfeito imediatamente.');
+      setSaveMessage('✓ Registro de venda desfeito.');
     }
 
     setTimeout(() => setSaveMessage(''), 3500);
@@ -873,18 +810,6 @@ export function AdminPanelModal({
           </div>
 
           <div className="flex items-center gap-2">
-            {isAuthenticated && (
-              <button
-                type="button"
-                onClick={handleManualTriggerVoiceReport}
-                className="px-3 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/35 text-indigo-300 border border-indigo-500/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
-                title="Ouvir relatório de áudio do dia para a Vani"
-              >
-                <Volume2 className={`w-4 h-4 text-indigo-400 ${isPlayingVoice ? 'animate-bounce' : ''}`} />
-                <span className="hidden sm:inline">Relatório de Voz</span>
-              </button>
-            )}
-
             {/* PROMINENT CASINHA (HOME) ICON BUTTON TO EXIT ADMIN AREA */}
             <button
               type="button"
@@ -967,20 +892,7 @@ export function AdminPanelModal({
                   }`}
                 >
                   <ShoppingBag className="w-4 h-4" />
-                  <span>VENDAS ({allSalesRecords.length})</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('crm')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold shrink-0 flex items-center gap-1.5 transition-all cursor-pointer uppercase ${
-                    activeTab === 'crm'
-                      ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30 ring-1 ring-amber-400'
-                      : 'bg-amber-500/10 text-amber-300 border border-amber-500/30 hover:bg-amber-500/20'
-                  }`}
-                >
-                  <Users className="w-4 h-4 text-amber-400" />
-                  <span>CLIENTES / CRM</span>
+                  <span>VENDAS & ENTRADAS/SAÍDAS ({allSalesRecords.length})</span>
                 </button>
 
                 <button
@@ -1118,20 +1030,21 @@ export function AdminPanelModal({
                                       quantity: val,
                                       isOutofStock: isSold,
                                       status: isSold ? 'esgotado' : 'disponivel',
+                                      isHidden: isSold ? true : Boolean(knife.isHidden),
                                     });
                                   }}
                                   className="w-12 text-center bg-[#1e2230] text-white font-mono text-xs font-bold rounded py-1 focus:outline-none border border-white/10"
                                 />
                               </div>
 
-                              {/* MARCAR COMO VENDIDA Button */}
+                              {/* REGISTRAR VENDA Button */}
                               <button
                                 onClick={() => handleOpenSaleModal(knife)}
-                                className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs flex items-center gap-1 border border-emerald-500/40 cursor-pointer transition-all active:scale-95"
-                                title="Registrar 1 venda e vincular cliente"
+                                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/30 cursor-pointer transition-all active:scale-95"
+                                title="Registrar venda desta faca (com ou sem desconto)"
                               >
-                                <ShoppingBag className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>VENDIDA</span>
+                                <ShoppingBag className="w-4 h-4 text-white" />
+                                <span>VENDER</span>
                               </button>
 
                               {/* Preview Button */}
@@ -1154,17 +1067,26 @@ export function AdminPanelModal({
                                 <span>EDITAR</span>
                               </button>
 
-                              {/* Esgotar / Reativar Toggle */}
-                              <button
-                                onClick={() => handleToggleStatus(knife)}
-                                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                                  isSoldOut
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30'
-                                    : 'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30'
-                                }`}
-                              >
-                                {isSoldOut ? '🔄 REATIVAR' : '🔄 ESGOTAR'}
-                              </button>
+                              {/* Reativar no Catálogo if hidden / zero stock */}
+                              {(knife.isHidden || isSoldOut) && (
+                                <button
+                                  onClick={() => {
+                                    onSaveKnife({
+                                      ...knife,
+                                      isHidden: false,
+                                      quantity: typeof knife.quantity === 'number' && knife.quantity > 0 ? knife.quantity : 1,
+                                      isOutofStock: false,
+                                      status: 'disponivel',
+                                    });
+                                    setSaveMessage(`✓ Faca "${knife.name}" reativada no catálogo!`);
+                                    setTimeout(() => setSaveMessage(''), 3500);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-xl bg-purple-500/20 text-purple-300 hover:bg-purple-500/35 border border-purple-500/40 text-xs font-bold transition-all cursor-pointer"
+                                  title="Reativar e exibir faca novamente no catálogo principal"
+                                >
+                                  🔄 REATIVAR
+                                </button>
+                              )}
 
                               {/* Delete Button - Automatic instant deletion */}
                               <button
@@ -1185,7 +1107,7 @@ export function AdminPanelModal({
                 </div>
               )}
 
-              {/* TAB VENDAS */}
+              {/* TAB VENDAS / REGISTRO DE ENTRADAS E SAÍDAS */}
               {activeTab === 'vendas' && (
                 <div className="space-y-4">
                   {/* SECTION 1: Resumo das Vendas (Executive Metrics) */}
@@ -1220,10 +1142,10 @@ export function AdminPanelModal({
                       </span>
                     </div>
 
-                    {/* Card 3: Total Geral Acumulado */}
+                    {/* Card 3: Total Geral de Peças */}
                     <div className="p-3 sm:p-4 rounded-2xl bg-[#161822] border border-white/10 flex flex-col justify-between space-y-1">
                       <div className="flex items-center justify-between text-amber-400">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Total Geral</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Total de Peças</span>
                         <ShoppingBag className="w-4 h-4 text-amber-400" />
                       </div>
                       <span className="text-lg sm:text-2xl font-black text-white">
@@ -1244,14 +1166,14 @@ export function AdminPanelModal({
                         {formatCurrencyBRL(totalSalesValue)}
                       </span>
                       <span className="text-[10px] text-zinc-400">
-                        Todos os meses
+                        Todas as vendas
                       </span>
                     </div>
 
-                    {/* Card 5: Estoque Total Disponível */}
+                    {/* Card 5: Estoque Disponível */}
                     <div className="col-span-2 sm:col-span-1 p-3 sm:p-4 rounded-2xl bg-[#161822] border border-blue-500/30 flex flex-col justify-between space-y-1">
                       <div className="flex items-center justify-between text-blue-400">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Estoque Total</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Estoque Ativo</span>
                         <Package className="w-4 h-4 text-blue-400" />
                       </div>
                       <span className="text-lg sm:text-2xl font-black text-white">
@@ -1263,275 +1185,174 @@ export function AdminPanelModal({
                     </div>
                   </div>
 
-                  {/* SECTION 2: Sub-Nav Tabs for Vendas Section */}
-                  <div className="flex items-center gap-1.5 p-1 bg-[#161822] rounded-2xl border border-white/10 overflow-x-auto no-scrollbar">
-                    <button
-                      onClick={() => setVendasSubTab('historico')}
-                      className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                        vendasSubTab === 'historico'
-                          ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white shadow-md'
-                          : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                      }`}
-                    >
-                      <ShoppingBag className="w-3.5 h-3.5 shrink-0" />
-                      <span>HISTÓRICO</span>
-                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/40 text-emerald-300 font-mono">
-                        {allSalesRecords.length}
-                      </span>
-                    </button>
+                  {/* Search Bar & Action Toolbar */}
+                  <div className="p-3.5 rounded-2xl bg-[#161822] border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="relative w-full sm:flex-1">
+                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={salesSearchQuery}
+                        onChange={(e) => setSalesSearchQuery(e.target.value)}
+                        placeholder="Buscar vendas por código ou nome da faca..."
+                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs font-mono text-amber-300 placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
 
-                    <button
-                      onClick={() => setVendasSubTab('esgotadas')}
-                      className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                        vendasSubTab === 'esgotadas'
-                          ? 'bg-gradient-to-r from-red-600 to-red-700 text-white shadow-md'
-                          : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                      }`}
-                    >
-                      <Flame className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                      <span>ESGOTADAS</span>
-                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${soldOutKnives.length > 0 ? 'bg-red-500/30 text-red-300' : 'bg-black/40 text-zinc-400'}`}>
-                        {soldOutKnives.length}
-                      </span>
-                    </button>
+                    <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 flex-wrap sm:flex-nowrap">
+                      {/* RELATÓRIO DE VENDAS BUTTON */}
+                      <button
+                        onClick={() => setIsSalesReportOpen(true)}
+                        className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:brightness-110 shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+                        title="Abrir Demonstrativo e Relatórios Mensais / Anuais para download em PDF"
+                      >
+                        <FileBarChart className="w-4 h-4 text-black shrink-0" />
+                        <span>📊 Relatórios (PDF)</span>
+                      </button>
 
-                    {/* RELATÓRIO MENSAL BUTTON */}
-                    <button
-                      onClick={() => setIsSalesReportOpen(true)}
-                      className="flex-1 min-w-[160px] py-2 px-3 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer bg-gradient-to-r from-amber-500 to-amber-600 text-black hover:brightness-110 shadow-lg shadow-amber-500/20 active:scale-95"
-                    >
-                      <FileBarChart className="w-3.5 h-3.5 text-black shrink-0" />
-                      <span>📊 RELATÓRIO MENSAL</span>
-                    </button>
+                      {allSalesRecords.length > 0 && (
+                        <button
+                          onClick={handleUndoLastSale}
+                          className="px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/30 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+                          title="Desfazer a última venda realizada e retornar a faca ao catálogo"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="hidden sm:inline">Desfazer última</span>
+                        </button>
+                      )}
+
+                      {allSalesRecords.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleClearAllSales}
+                          className="px-3 py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 text-xs font-bold border border-red-500/30 cursor-pointer shrink-0 transition-all active:scale-95 flex items-center gap-1.5"
+                          title="Limpar e excluir definitivamente todo o histórico de vendas"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                          <span>Limpar</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {/* SUB-TAB 1: HISTÓRICO DE VENDAS */}
-                  {vendasSubTab === 'historico' && (
-                    <div className="space-y-3">
-                      {/* Search Bar & Actions */}
-                      <div className="p-3 rounded-2xl bg-[#161822] border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2">
-                        <div className="relative w-full sm:flex-1">
-                          <Search className="w-4 h-4 absolute left-3 top-2.5 text-zinc-500 pointer-events-none" />
-                          <input
-                            type="text"
-                            value={salesSearchQuery}
-                            onChange={(e) => setSalesSearchQuery(e.target.value)}
-                            placeholder="Buscar por código ou nome/modelo da faca..."
-                            className="w-full pl-9 pr-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs font-mono text-amber-300 placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
-                          {allSalesRecords.length > 0 && (
-                            <button
-                              onClick={handleUndoLastSale}
-                              className="flex-1 sm:flex-none px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold border border-amber-500/30 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
-                              title="Desfazer a última venda realizada"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-                              <span>Desfazer última venda</span>
-                            </button>
-                          )}
-
-                          {allSalesRecords.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={handleClearAllSales}
-                              className="px-3 py-2 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 text-xs font-bold border border-red-500/30 cursor-pointer shrink-0 transition-all active:scale-95 flex items-center gap-1.5"
-                              title="Limpar e excluir definitivamente todo o histórico de vendas"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                              <span>Limpar</span>
-                            </button>
-                          )}
-                        </div>
+                  {/* Sales Entries & Exits List */}
+                  <div className="space-y-2.5">
+                    {filteredSalesRecords.length === 0 ? (
+                      <div className="p-10 text-center rounded-2xl bg-[#161822] border border-white/10 text-zinc-500 text-xs space-y-2">
+                        <ShoppingBag className="w-8 h-8 mx-auto text-zinc-600" />
+                        <p className="font-semibold text-zinc-400">Nenhuma venda registrada até o momento.</p>
+                        <p className="text-[11px] text-zinc-500">
+                          Ao clicar em "VENDER" na lista de facas, a venda é registrada aqui e a faca é baixada do catálogo quando seu estoque zera.
+                        </p>
                       </div>
-
-                      {/* Sales List */}
-                      <div className="space-y-2.5">
-                        {filteredSalesRecords.length === 0 ? (
-                          <div className="p-10 text-center rounded-2xl bg-[#161822] border border-white/10 text-zinc-500 text-xs space-y-2">
-                            <ShoppingBag className="w-8 h-8 mx-auto text-zinc-600" />
-                            <p className="font-semibold text-zinc-400">Nenhuma venda encontrada.</p>
-                            <p className="text-[11px] text-zinc-500">
-                              Ao clicar no botão "VENDIDA" na lista de facas, as vendas aparecerão aqui com data e horário detalhados.
-                            </p>
-                          </div>
-                        ) : (
-                          filteredSalesRecords.map((item) => (
-                            <div
-                              key={item.id}
-                              className="p-3.5 rounded-2xl bg-[#161822] border border-emerald-500/20 hover:border-emerald-500/40 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-                            >
-                              <div className="flex items-center gap-3">
-                                <img
-                                  src={
-                                    item.images?.[0] ||
-                                    knives.find((k) => k.id === item.knifeId || (k.code && k.code === item.code))?.images?.[0] ||
-                                    'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=200'
-                                  }
-                                  alt={item.name}
-                                  referrerPolicy="no-referrer"
-                                  className="w-12 h-12 rounded-xl object-cover border border-white/10"
-                                />
-                                <div>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-[10px] font-mono text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                                      CÓD: {item.code}
+                    ) : (
+                      filteredSalesRecords.map((item) => {
+                        const hasDiscount = item.originalPrice && item.discount && item.discount > 0;
+                        return (
+                          <div
+                            key={item.id}
+                            className="p-3.5 rounded-2xl bg-[#161822] border border-emerald-500/20 hover:border-emerald-500/40 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={
+                                  item.images?.[0] ||
+                                  knives.find((k) => k.id === item.knifeId || (k.code && k.code === item.code))?.images?.[0] ||
+                                  'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=200'
+                                }
+                                alt={item.name}
+                                referrerPolicy="no-referrer"
+                                className="w-12 h-12 rounded-xl object-cover border border-white/10"
+                              />
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-[10px] font-mono text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                    CÓD: {item.code}
+                                  </span>
+                                  {item.category && (
+                                    <span className="text-[9px] text-amber-300 uppercase font-bold">{item.category}</span>
+                                  )}
+                                  <span className="text-[9px] text-zinc-400 font-mono">
+                                    • {item.soldAt}
+                                  </span>
+                                  {item.paymentMethod && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-white/5 text-emerald-400 uppercase border border-emerald-500/20">
+                                      {item.paymentMethod.replace('_', ' ')}
                                     </span>
-                                    {item.category && (
-                                      <span className="text-[9px] text-amber-300 uppercase font-bold">{item.category}</span>
-                                    )}
-                                    <span className="text-[9px] text-zinc-400 font-mono">
-                                      • {item.soldAt}
-                                    </span>
-                                  </div>
-                                  <h4 className="text-xs sm:text-sm font-bold text-white mt-0.5">{item.name}</h4>
+                                  )}
                                 </div>
-                              </div>
-
-                              <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
-                                <span className="text-sm sm:text-base font-black text-amber-400 mr-1">
-                                  {formatCurrencyBRL(item.price)}
-                                </span>
-
-                                <button
-                                  onClick={() => {
-                                    const targetKnife = knives.find((k) => k.id === item.knifeId || (k.code && k.code === item.code));
-                                    if (targetKnife) {
-                                      setPreviewKnife(targetKnife);
-                                    } else {
-                                      setPreviewKnife({
-                                        id: item.knifeId,
-                                        code: item.code,
-                                        name: item.name,
-                                        category: item.category || 'Geral',
-                                        price: item.price,
-                                        quantity: 0,
-                                        images: [item.image || 'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=200'],
-                                        isOutofStock: true,
-                                        status: 'esgotado',
-                                      });
-                                    }
-                                  }}
-                                  className="px-2.5 py-1.5 rounded-xl bg-blue-500/20 hover:bg-blue-500/35 text-blue-300 border border-blue-500/30 text-xs font-bold cursor-pointer transition-all flex items-center gap-1 shrink-0"
-                                  title="Visualizar foto e identificação desta faca"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-blue-400" />
-                                  <span>Visualizar</span>
-                                </button>
-
-                                <button
-                                  onClick={() => handleUndoSale(item)}
-                                  className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold cursor-pointer transition-all flex items-center gap-1 shrink-0"
-                                  title="Desfazer esta venda e devolver 1 unidade ao estoque"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-                                  <span>Desfazer Venda</span>
-                                </button>
+                                <h4 className="text-xs sm:text-sm font-bold text-white mt-0.5">{item.name}</h4>
+                                {item.note && (
+                                  <p className="text-[10px] text-zinc-400 italic mt-0.5">Obs: {item.note}</p>
+                                )}
                               </div>
                             </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  )}
 
-                  {/* SUB-TAB 2: ESGOTADAS (0 unidades) */}
-                  {vendasSubTab === 'esgotadas' && (
-                    <div className="space-y-3">
-                      <div className="p-3 rounded-2xl bg-[#161822] border border-red-500/30 flex items-center justify-between text-xs text-red-200">
-                        <div className="flex items-center gap-2">
-                          <Flame className="w-4 h-4 text-red-400 shrink-0" />
-                          <span>Facas com estoque zerado / esgotadas no catálogo.</span>
-                        </div>
-                        <span className="font-bold text-red-400 font-mono">{soldOutKnives.length} modelo(s)</span>
-                      </div>
-
-                      <div className="space-y-2.5">
-                        {soldOutKnives.length === 0 ? (
-                          <div className="p-10 text-center rounded-2xl bg-[#161822] border border-white/10 text-zinc-500 text-xs space-y-2">
-                            <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-500" />
-                            <p className="font-semibold text-zinc-300">Nenhuma faca esgotada no catálogo!</p>
-                            <p className="text-[11px] text-zinc-500">Todos os modelos cadastrados possuem ao menos 1 unidade em estoque.</p>
-                          </div>
-                        ) : (
-                          soldOutKnives.map((knife) => {
-                            const mainImg = knife.images?.[0] || 'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=200';
-
-                            return (
-                              <div
-                                key={knife.id}
-                                className="p-3.5 rounded-2xl bg-[#161822] border border-red-500/30 hover:border-red-500/50 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className="relative">
-                                    <img
-                                      src={mainImg}
-                                      alt={knife.name}
-                                      referrerPolicy="no-referrer"
-                                      className="w-12 h-12 rounded-xl object-cover border border-white/10 opacity-60"
-                                    />
-                                    <span className="absolute inset-0 bg-red-950/60 rounded-xl flex items-center justify-center text-[8px] font-black text-red-300 uppercase tracking-widest border border-red-500/50">
-                                      0 UNID
+                            <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
+                              <div className="flex flex-col items-end mr-1">
+                                <span className="text-sm sm:text-base font-black text-emerald-400 font-mono">
+                                  {formatCurrencyBRL(item.price)}
+                                </span>
+                                {hasDiscount && (
+                                  <div className="flex items-center gap-1 text-[10px] font-bold text-amber-400">
+                                    <span className="line-through text-zinc-500 font-mono">
+                                      {formatCurrencyBRL(item.originalPrice!)}
+                                    </span>
+                                    <span className="bg-amber-500/20 px-1 rounded">
+                                      -{formatCurrencyBRL(item.discount!)}
                                     </span>
                                   </div>
-                                  <div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[10px] font-mono text-red-400 font-bold bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
-                                        CÓD: {knife.code}
-                                      </span>
-                                      <span className="text-[9px] text-red-300 uppercase font-bold">{knife.category}</span>
-                                    </div>
-                                    <h4 className="text-xs sm:text-sm font-bold text-white mt-0.5">{knife.name}</h4>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
-                                  <span className="px-2.5 py-1 rounded-xl text-xs font-extrabold uppercase bg-red-500/20 text-red-400 border border-red-500/30">
-                                    ESGOTADA
-                                  </span>
-
-                                  {/* Botão para visualizar faca */}
-                                  <button
-                                    onClick={() => setPreviewKnife(knife)}
-                                    className="px-2.5 py-1.5 rounded-xl bg-blue-500/20 hover:bg-blue-500/35 text-blue-300 border border-blue-500/30 text-xs font-bold cursor-pointer transition-all flex items-center gap-1 shrink-0"
-                                    title="Visualizar foto e identificação desta faca"
-                                  >
-                                    <Eye className="w-3.5 h-3.5 text-blue-400" />
-                                    <span>Visualizar</span>
-                                  </button>
-
-                                  {/* Botão de Reabastecer (+1) */}
-                                  <button
-                                    onClick={() => handleRestockKnife(knife, 1)}
-                                    className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs flex items-center gap-1 border border-emerald-500/40 cursor-pointer transition-all active:scale-95 shrink-0"
-                                    title="Adicionar 1 unidade ao estoque e reativar faca no catálogo"
-                                  >
-                                    <Plus className="w-3.5 h-3.5 text-emerald-400" />
-                                    <span>REABASTECER (+1)</span>
-                                  </button>
-                                </div>
+                                )}
                               </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
-              {/* TAB: CLIENTES / CRM */}
-              {activeTab === 'crm' && (
-                <CrmSection
-                  knives={knives}
-                  pendingSaleKnife={pendingSaleKnife}
-                  onCompleteSaleWithNewCustomer={handleCompleteSaleFromCrm}
-                  onCancelPendingSale={() => setPendingSaleKnife(null)}
-                  initialSubTab={crmSubTab}
-                  initialPaymentMethod={pendingPaymentMethod}
-                />
+                              <button
+                                onClick={() => {
+                                  const targetKnife = knives.find((k) => k.id === item.knifeId || (k.code && k.code === item.code));
+                                  if (targetKnife) {
+                                    setPreviewKnife(targetKnife);
+                                  } else {
+                                    setPreviewKnife({
+                                      id: item.knifeId,
+                                      code: item.code,
+                                      name: item.name,
+                                      category: item.category || 'Geral',
+                                      price: item.price,
+                                      quantity: 0,
+                                      images: [item.image || 'https://images.unsplash.com/photo-1593618998160-e34014e67546?auto=format&fit=crop&q=80&w=200'],
+                                      isOutofStock: true,
+                                      status: 'esgotado',
+                                    });
+                                  }
+                                }}
+                                className="px-2.5 py-1.5 rounded-xl bg-blue-500/20 hover:bg-blue-500/35 text-blue-300 border border-blue-500/30 text-xs font-bold cursor-pointer transition-all flex items-center gap-1 shrink-0"
+                                title="Visualizar foto e identificação desta faca"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-blue-400" />
+                                <span>Ver</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleUndoSale(item)}
+                                className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold cursor-pointer transition-all flex items-center gap-1 shrink-0"
+                                title="Desfazer esta venda e devolver 1 unidade ao estoque"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                                <span>Desfazer</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleRemoveSaleItem(item.id)}
+                                className="p-2 rounded-xl bg-red-600/20 hover:bg-red-600/40 text-red-300 border border-red-500/30 cursor-pointer transition-all active:scale-95 shrink-0"
+                                title="Excluir este registro de venda"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
               )}
 
               {/* TAB: GERENCIAR CATEGORIAS */}
@@ -2617,20 +2438,19 @@ export function AdminPanelModal({
         </div>
       )}
 
-      {/* Select Customer Sale Modal */}
-      <SelectCustomerSaleModal
-        isOpen={isSelectCustomerModalOpen}
-        knife={saleTargetKnife}
+      {/* Register Sale Modal (Without customer PII, supporting custom price & discounts) */}
+      <RegisterSaleModal
+        isOpen={isRegisterSaleModalOpen}
+        knife={saleModalKnife}
         onClose={() => {
-          setIsSelectCustomerModalOpen(false);
-          setSaleTargetKnife(null);
+          setIsRegisterSaleModalOpen(false);
+          setSaleModalKnife(null);
         }}
-        onConfirmSale={handleConfirmSaleWithCustomer}
-        onGoToCrmRegister={handleGoToCrmRegister}
+        onConfirmSale={handleConfirmSale}
         onGoToSalesTab={() => setActiveTab('vendas')}
       />
 
-      {/* Monthly Sales Report Modal */}
+      {/* Monthly & Annual Sales Report Modal */}
       <SalesReportModal
         isOpen={isSalesReportOpen}
         onClose={() => setIsSalesReportOpen(false)}

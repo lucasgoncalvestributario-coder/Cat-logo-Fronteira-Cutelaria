@@ -8,15 +8,18 @@ export interface SaleRecord {
   knifeId: string;
   code: string;
   name: string;
-  price: number;
-  soldAt: string; // e.g. "12/08/2026 18:30"
+  price: number; // Final sold price
+  originalPrice?: number; // Catalog regular price
+  discount?: number; // Discount value applied
+  soldAt: string; // e.g. "16/08/2026 18:30"
   timestamp?: number;
   category?: string;
   images?: string[];
+  paymentMethod?: PaymentMethod;
+  note?: string;
   customerId?: string;
   customerName?: string;
   customerWhatsapp?: string;
-  paymentMethod?: PaymentMethod;
 }
 
 const SALES_LOG_KEY = 'cutelaria_sales_log_v1';
@@ -95,12 +98,14 @@ export function saveSaleRecord(
     category?: string;
     images?: string[];
   },
-  customer?: {
+  customerOrSoldPrice?: {
     id?: string;
     name?: string;
     whatsapp?: string;
-  } | null,
-  paymentMethod?: PaymentMethod
+  } | number | null,
+  paymentMethod?: PaymentMethod,
+  note?: string,
+  customSoldPrice?: number
 ): SaleRecord[] {
   const current = getStoredSalesLog();
   const now = new Date();
@@ -113,21 +118,31 @@ export function saveSaleRecord(
   });
 
   const sanitizedImages = cleanImageUrls(knife.images);
+  const originalCatalogPrice = Number(knife.price) || 0;
+
+  let finalSoldPrice = originalCatalogPrice;
+  if (typeof customerOrSoldPrice === 'number') {
+    finalSoldPrice = customerOrSoldPrice;
+  } else if (typeof customSoldPrice === 'number') {
+    finalSoldPrice = customSoldPrice;
+  }
+
+  const discountCalculated = Math.max(0, originalCatalogPrice - finalSoldPrice);
 
   const newRecord: SaleRecord = {
     id: `sale-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
     knifeId: knife.id,
     code: knife.code || 'FC-000',
     name: knife.name || 'Faca Artesanal',
-    price: Number(knife.price) || 0,
+    price: finalSoldPrice,
+    originalPrice: originalCatalogPrice,
+    discount: discountCalculated > 0 ? discountCalculated : undefined,
     soldAt: formattedDate,
     timestamp: now.getTime(),
     category: knife.category || 'GERAL',
     images: sanitizedImages,
-    customerId: customer?.id || undefined,
-    customerName: customer?.name || undefined,
-    customerWhatsapp: customer?.whatsapp || undefined,
     paymentMethod: paymentMethod || 'pix',
+    note: note || undefined,
   };
 
   let updated = [newRecord, ...current];
